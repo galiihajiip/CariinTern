@@ -14,6 +14,7 @@ $userId = (int) ($_SESSION['user_id'] ?? 0);
 $studentProfile = null;
 $studyPrograms = [];
 $profileCompletion = 0;
+$activeTab = ($_GET['tab'] ?? '') === 'documents' ? 'documents' : 'personal';
 $old = [
     'full_name' => '',
     'student_id' => '',
@@ -67,6 +68,29 @@ function student_profile_load(PDO $pdo, int $userId): ?array
     $profile = $stmt->fetch();
 
     return $profile ?: null;
+}
+
+function student_profile_file_meta(string $filename, string $folder): ?array
+{
+    $filePath = get_upload_file_path($filename, $folder);
+
+    if ($filePath === null || !is_file($filePath)) {
+        return null;
+    }
+
+    return [
+        'size' => filesize($filePath) ?: 0,
+        'modified_at' => filemtime($filePath) ?: null,
+    ];
+}
+
+function student_profile_format_file_size(int $bytes): string
+{
+    if ($bytes >= 1024 * 1024) {
+        return number_format($bytes / (1024 * 1024), 2) . ' MB';
+    }
+
+    return number_format(max(1, $bytes / 1024), 1) . ' KB';
 }
 
 try {
@@ -258,11 +282,135 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'pe
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'documents') {
+    $activeTab = 'documents';
+    $documentAction = trim((string) ($_POST['document_action'] ?? 'upload'));
+    $errors = [];
+    $hasCvUpload = isset($_FILES['cv_file']) && ($_FILES['cv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+    $hasTranscriptUpload = isset($_FILES['transcript_file']) && ($_FILES['transcript_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+    $oldCvFile = (string) ($studentProfile['cv_file'] ?? '');
+    $oldTranscriptFile = (string) ($studentProfile['transcript_file'] ?? '');
+    $newCvFile = $oldCvFile;
+    $newTranscriptFile = $oldTranscriptFile;
+    $uploadedCvFile = '';
+    $uploadedTranscriptFile = '';
+    $studentNim = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) ($studentProfile['student_id'] ?? 'student_' . $userId));
+
+    if (!$studentProfile) {
+        $errors[] = 'Profil mahasiswa belum tersedia';
+    }
+
+    if ($documentAction === 'delete_cv') {
+        $newCvFile = '';
+        $hasCvUpload = false;
+        $hasTranscriptUpload = false;
+    } elseif ($documentAction === 'delete_transcript') {
+        $newTranscriptFile = '';
+        $hasCvUpload = false;
+        $hasTranscriptUpload = false;
+    } elseif (!$hasCvUpload && !$hasTranscriptUpload) {
+        $errors[] = 'Pilih minimal satu dokumen PDF untuk diupload';
+    }
+
+    if ($errors === [] && $hasCvUpload) {
+        $upload = upload_file($_FILES['cv_file'], 'cv', 'cv_' . $studentNim);
+
+        if (!$upload['success']) {
+            $errors[] = 'CV: ' . $upload['message'];
+        } else {
+            $uploadedCvFile = $upload['filename'];
+            $newCvFile = $upload['filename'];
+        }
+    }
+
+    if ($errors === [] && $hasTranscriptUpload) {
+        $upload = upload_file($_FILES['transcript_file'], 'transcripts', 'transkrip_' . $studentNim);
+
+        if (!$upload['success']) {
+            $errors[] = 'Transkrip: ' . $upload['message'];
+        } else {
+            $uploadedTranscriptFile = $upload['filename'];
+            $newTranscriptFile = $upload['filename'];
+        }
+    }
+
+    if ($errors !== []) {
+        if ($uploadedCvFile !== '') {
+            delete_file($uploadedCvFile, 'cv');
+        }
+
+        if ($uploadedTranscriptFile !== '') {
+            delete_file($uploadedTranscriptFile, 'transcripts');
+        }
+    }
+
+    if ($errors === []) {
+        try {
+            $nextProfile = [
+                'full_name' => $studentProfile['full_name'] ?? '',
+                'student_id' => $studentProfile['student_id'] ?? '',
+                'phone' => $studentProfile['phone'] ?? '',
+                'address' => $studentProfile['address'] ?? '',
+                'program_id' => $studentProfile['program_id'] ?? '',
+                'cv_file' => $newCvFile,
+                'transcript_file' => $newTranscriptFile,
+            ];
+            $nextCompletion = student_profile_completion($nextProfile);
+            $completedFlag = $nextCompletion === 100 ? 1 : 0;
+
+            $stmt = $pdo->prepare(
+                'UPDATE student_profiles
+                 SET cv_file = :cv_file,
+                     transcript_file = :transcript_file,
+                     profile_completed = :profile_completed
+                 WHERE user_id = :user_id'
+            );
+            $stmt->execute([
+                ':cv_file' => $newCvFile !== '' ? $newCvFile : null,
+                ':transcript_file' => $newTranscriptFile !== '' ? $newTranscriptFile : null,
+                ':profile_completed' => $completedFlag,
+                ':user_id' => $userId,
+            ]);
+
+            if (($documentAction === 'delete_cv' || $uploadedCvFile !== '') && $oldCvFile !== '') {
+                delete_file($oldCvFile, 'cv');
+            }
+
+            if (($documentAction === 'delete_transcript' || $uploadedTranscriptFile !== '') && $oldTranscriptFile !== '') {
+                delete_file($oldTranscriptFile, 'transcripts');
+            }
+
+            $_SESSION['profile_completed'] = $nextCompletion;
+
+            log_activity($userId, 'update_student_documents', 'Mahasiswa memperbarui dokumen profil');
+            set_flash('success', 'Dokumen profil berhasil diperbarui');
+            redirect(BASE_URL . '/student/profile.php?tab=documents');
+        } catch (PDOException $exception) {
+            if ($uploadedCvFile !== '') {
+                delete_file($uploadedCvFile, 'cv');
+            }
+
+            if ($uploadedTranscriptFile !== '') {
+                delete_file($uploadedTranscriptFile, 'transcripts');
+            }
+
+            error_log('Update student documents failed: ' . $exception->getMessage());
+            $errors[] = 'Dokumen gagal diperbarui. Silakan coba lagi nanti';
+        }
+    }
+
+    foreach ($errors as $error) {
+        set_flash('error', $error);
+    }
+}
+
 $avatarUrl = $old['avatar'] !== ''
     ? rtrim(BASE_URL, '/') . '/uploads/' . ltrim($old['avatar'], '/')
     : 'https://placehold.co/160x160?text=Foto';
 $cvUrl = $old['cv_file'] !== '' ? get_file_url($old['cv_file'], 'cv') : '';
 $transcriptUrl = $old['transcript_file'] !== '' ? get_file_url($old['transcript_file'], 'transcripts') : '';
+$cvMeta = $old['cv_file'] !== '' ? student_profile_file_meta($old['cv_file'], 'cv') : null;
+$transcriptMeta = $old['transcript_file'] !== '' ? student_profile_file_meta($old['transcript_file'], 'transcripts') : null;
 
 require_once __DIR__ . '/../layouts/header.php';
 require_once __DIR__ . '/../layouts/sidebar_student.php';
@@ -282,19 +430,19 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
 
 <ul class="nav nav-tabs mb-4" id="profileTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="personal-tab" data-bs-toggle="tab" data-bs-target="#personal-pane" type="button" role="tab" aria-controls="personal-pane" aria-selected="true">
+        <button class="nav-link <?= $activeTab === 'personal' ? 'active' : ''; ?>" id="personal-tab" data-bs-toggle="tab" data-bs-target="#personal-pane" type="button" role="tab" aria-controls="personal-pane" aria-selected="<?= $activeTab === 'personal' ? 'true' : 'false'; ?>">
             Data Diri
         </button>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false">
+        <button class="nav-link <?= $activeTab === 'documents' ? 'active' : ''; ?>" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="<?= $activeTab === 'documents' ? 'true' : 'false'; ?>">
             Upload Dokumen
         </button>
     </li>
 </ul>
 
 <div class="tab-content" id="profileTabsContent">
-    <div class="tab-pane fade show active" id="personal-pane" role="tabpanel" aria-labelledby="personal-tab" tabindex="0">
+    <div class="tab-pane fade <?= $activeTab === 'personal' ? 'show active' : ''; ?>" id="personal-pane" role="tabpanel" aria-labelledby="personal-tab" tabindex="0">
         <div class="row g-4">
             <div class="col-12 col-xl-4">
                 <div class="card border-0 shadow-sm h-100">
@@ -421,43 +569,138 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
         </div>
     </div>
 
-    <div class="tab-pane fade" id="documents-pane" role="tabpanel" aria-labelledby="documents-tab" tabindex="0">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <h2 class="h5 fw-bold mb-3">Upload Dokumen</h2>
-                <p class="text-muted">Area upload dokumen akan dilengkapi pada bagian berikutnya. Dokumen saat ini:</p>
+    <div class="tab-pane fade <?= $activeTab === 'documents' ? 'show active' : ''; ?>" id="documents-pane" role="tabpanel" aria-labelledby="documents-tab" tabindex="0">
+        <form id="documentsForm" class="needs-validation" method="POST" action="profile.php?tab=documents" enctype="multipart/form-data" novalidate>
+            <input type="hidden" name="form_type" value="documents">
+            <input type="hidden" name="document_action" value="upload">
 
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="fw-semibold mb-1">CV</div>
-                            <?php if ($cvUrl !== ''): ?>
-                                <a href="<?= sanitize($cvUrl); ?>" target="_blank" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-file-earmark-person me-1"></i>
-                                    Lihat CV
-                                </a>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Belum diupload</span>
-                            <?php endif; ?>
+            <div class="row g-4">
+                <div class="col-12 col-xl-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                                <div>
+                                    <h2 class="h5 fw-bold mb-1">CV</h2>
+                                    <p class="text-muted small mb-0">Maks. 5MB, format PDF saja.</p>
+                                </div>
+                                <i class="bi bi-file-earmark-pdf fs-2 text-danger"></i>
+                            </div>
+
+                            <div class="border rounded-3 bg-light p-3 mb-3">
+                                <?php if ($old['cv_file'] !== ''): ?>
+                                    <div class="fw-semibold text-break"><?= $old['cv_file']; ?></div>
+                                    <div class="small text-muted">
+                                        <?= $cvMeta ? student_profile_format_file_size((int) $cvMeta['size']) : 'Ukuran tidak tersedia'; ?>
+                                        <?php if ($cvMeta && $cvMeta['modified_at']): ?>
+                                            · <?= date('d M Y H:i', (int) $cvMeta['modified_at']); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 mt-3">
+                                        <a href="<?= sanitize($cvUrl); ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-download me-1"></i>
+                                            Download
+                                        </a>
+                                        <button type="submit" name="document_action" value="delete_cv" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash me-1"></i>
+                                            Hapus
+                                        </button>
+                                    </div>
+                                <?php else: ?>
+                                    <span class="badge bg-secondary">Belum diupload</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <label class="upload-area d-block text-center p-4" for="cvFile" data-drop-target="cvFile">
+                                <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                                <div class="fw-semibold mt-2">Klik atau drag PDF CV ke sini</div>
+                                <div class="text-muted small">File akan menggantikan CV lama setelah disimpan.</div>
+                                <div class="small text-primary mt-2" id="cvFilePreview"></div>
+                            </label>
+                            <input type="file" class="form-control d-none document-input" id="cvFile" name="cv_file" accept="application/pdf,.pdf" data-preview="cvFilePreview">
+                            <div class="invalid-feedback d-block" id="cvFileError"></div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="col-12 col-md-6">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="fw-semibold mb-1">Transkrip</div>
-                            <?php if ($transcriptUrl !== ''): ?>
-                                <a href="<?= sanitize($transcriptUrl); ?>" target="_blank" class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-file-earmark-text me-1"></i>
-                                    Lihat Transkrip
-                                </a>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Belum diupload</span>
-                            <?php endif; ?>
+                <div class="col-12 col-xl-6">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                                <div>
+                                    <h2 class="h5 fw-bold mb-1">Transkrip</h2>
+                                    <p class="text-muted small mb-0">Maks. 5MB, format PDF saja.</p>
+                                </div>
+                                <i class="bi bi-file-earmark-pdf fs-2 text-danger"></i>
+                            </div>
+
+                            <div class="border rounded-3 bg-light p-3 mb-3">
+                                <?php if ($old['transcript_file'] !== ''): ?>
+                                    <div class="fw-semibold text-break"><?= $old['transcript_file']; ?></div>
+                                    <div class="small text-muted">
+                                        <?= $transcriptMeta ? student_profile_format_file_size((int) $transcriptMeta['size']) : 'Ukuran tidak tersedia'; ?>
+                                        <?php if ($transcriptMeta && $transcriptMeta['modified_at']): ?>
+                                            · <?= date('d M Y H:i', (int) $transcriptMeta['modified_at']); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="d-flex flex-wrap gap-2 mt-3">
+                                        <a href="<?= sanitize($transcriptUrl); ?>" target="_blank" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-download me-1"></i>
+                                            Download
+                                        </a>
+                                        <button type="submit" name="document_action" value="delete_transcript" class="btn btn-sm btn-outline-danger">
+                                            <i class="bi bi-trash me-1"></i>
+                                            Hapus
+                                        </button>
+                                    </div>
+                                <?php else: ?>
+                                    <span class="badge bg-secondary">Belum diupload</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <label class="upload-area d-block text-center p-4" for="transcriptFile" data-drop-target="transcriptFile">
+                                <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                                <div class="fw-semibold mt-2">Klik atau drag PDF transkrip ke sini</div>
+                                <div class="text-muted small">File akan menggantikan transkrip lama setelah disimpan.</div>
+                                <div class="small text-primary mt-2" id="transcriptFilePreview"></div>
+                            </label>
+                            <input type="file" class="form-control d-none document-input" id="transcriptFile" name="transcript_file" accept="application/pdf,.pdf" data-preview="transcriptFilePreview">
+                            <div class="invalid-feedback d-block" id="transcriptFileError"></div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            <div class="card border-0 shadow-sm mt-4">
+                <div class="card-body">
+                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">Estimasi Kelengkapan Profil</div>
+                            <div class="text-muted small">Progress akan bertambah otomatis saat CV/transkrip dipilih.</div>
+                        </div>
+                        <span class="badge bg-primary fs-6" id="documentProgressLabel"><?= $profileCompletion; ?>%</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div
+                            class="progress-bar bg-primary"
+                            id="documentProgressBar"
+                            role="progressbar"
+                            style="width: <?= $profileCompletion; ?>%;"
+                            aria-valuenow="<?= $profileCompletion; ?>"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                        ></div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a href="<?= rtrim(BASE_URL, '/'); ?>/student/profile.php" class="btn btn-outline-secondary">Batal</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload me-1"></i>
+                            Simpan Dokumen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -483,6 +726,15 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
 <script>
     const personalForm = document.getElementById('personalForm');
     const gpaInput = document.getElementById('gpa');
+    const documentsForm = document.getElementById('documentsForm');
+    const documentInputs = document.querySelectorAll('.document-input');
+    const documentProgressBar = document.getElementById('documentProgressBar');
+    const documentProgressLabel = document.getElementById('documentProgressLabel');
+    const maxPdfSize = 5 * 1024 * 1024;
+    const baseCompletion = <?= (int) $profileCompletion; ?>;
+    const hasExistingCv = <?= $old['cv_file'] !== '' ? 'true' : 'false'; ?>;
+    const hasExistingTranscript = <?= $old['transcript_file'] !== '' ? 'true' : 'false'; ?>;
+    const documentWeight = Math.round(100 / 7);
 
     gpaInput.addEventListener('input', () => {
         const value = Number(gpaInput.value);
@@ -499,6 +751,129 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
         }
 
         personalForm.classList.add('was-validated');
+    });
+
+    function formatFileSize(bytes) {
+        return bytes >= 1024 * 1024
+            ? (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+            : (bytes / 1024).toFixed(1) + ' KB';
+    }
+
+    function validatePdfInput(input) {
+        const file = input.files[0];
+        const error = document.getElementById(input.id + 'Error');
+        const preview = document.getElementById(input.dataset.preview);
+
+        error.textContent = '';
+        input.classList.remove('is-invalid');
+
+        if (!file) {
+            preview.textContent = '';
+            return true;
+        }
+
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+        if (!isPdf) {
+            error.textContent = 'File harus berformat PDF.';
+            input.classList.add('is-invalid');
+            return false;
+        }
+
+        if (file.size > maxPdfSize) {
+            error.textContent = 'Ukuran file maksimal 5MB.';
+            input.classList.add('is-invalid');
+            return false;
+        }
+
+        preview.textContent = file.name + ' (' + formatFileSize(file.size) + ')';
+        return true;
+    }
+
+    function updateDocumentProgress() {
+        let estimatedCompletion = baseCompletion;
+
+        if (!hasExistingCv && document.getElementById('cvFile').files.length > 0) {
+            estimatedCompletion += documentWeight;
+        }
+
+        if (!hasExistingTranscript && document.getElementById('transcriptFile').files.length > 0) {
+            estimatedCompletion += documentWeight;
+        }
+
+        estimatedCompletion = Math.min(100, estimatedCompletion);
+        documentProgressBar.style.width = estimatedCompletion + '%';
+        documentProgressBar.setAttribute('aria-valuenow', String(estimatedCompletion));
+        documentProgressLabel.textContent = estimatedCompletion + '%';
+    }
+
+    documentInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            validatePdfInput(input);
+            updateDocumentProgress();
+        });
+    });
+
+    document.querySelectorAll('[data-drop-target]').forEach(area => {
+        const input = document.getElementById(area.dataset.dropTarget);
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            area.addEventListener(eventName, event => {
+                event.preventDefault();
+                area.classList.add('border-primary');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            area.addEventListener(eventName, event => {
+                event.preventDefault();
+                area.classList.remove('border-primary');
+            });
+        });
+
+        area.addEventListener('drop', event => {
+            const file = event.dataTransfer.files[0];
+            if (!file) return;
+
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            input.files = dataTransfer.files;
+            validatePdfInput(input);
+            updateDocumentProgress();
+        });
+    });
+
+    documentsForm.addEventListener('submit', event => {
+        const submitter = event.submitter;
+
+        if (submitter && submitter.name === 'document_action' && submitter.value.startsWith('delete_')) {
+            return;
+        }
+
+        let valid = true;
+        let hasSelectedFile = false;
+
+        documentInputs.forEach(input => {
+            if (input.files.length > 0) {
+                hasSelectedFile = true;
+            }
+
+            valid = validatePdfInput(input) && valid;
+        });
+
+        if (!hasSelectedFile) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.getElementById('cvFileError').textContent = 'Pilih minimal satu dokumen PDF untuk diupload.';
+            return;
+        }
+
+        if (!valid) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        documentsForm.classList.add('was-validated');
     });
 </script>
 
