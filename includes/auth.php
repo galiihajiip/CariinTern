@@ -2,8 +2,62 @@
 
 require_once __DIR__ . '/functions.php';
 
+function login_rate_limit_status(): array
+{
+    $now = time();
+    $window = 600;
+    $attempts = (int) ($_SESSION['login_attempts'] ?? 0);
+    $attemptTime = (int) ($_SESSION['login_attempt_time'] ?? 0);
+
+    if ($attemptTime > 0 && ($now - $attemptTime) >= $window) {
+        unset($_SESSION['login_attempts'], $_SESSION['login_attempt_time']);
+        return ['locked' => false, 'remaining' => 0];
+    }
+
+    if ($attempts > 5 && $attemptTime > 0) {
+        return [
+            'locked' => true,
+            'remaining' => max(1, $window - ($now - $attemptTime)),
+        ];
+    }
+
+    return ['locked' => false, 'remaining' => 0];
+}
+
+function record_failed_login_attempt(): void
+{
+    $now = time();
+    $window = 600;
+    $attemptTime = (int) ($_SESSION['login_attempt_time'] ?? 0);
+
+    if ($attemptTime === 0 || ($now - $attemptTime) >= $window) {
+        $_SESSION['login_attempts'] = 1;
+        $_SESSION['login_attempt_time'] = $now;
+        return;
+    }
+
+    $_SESSION['login_attempts'] = (int) ($_SESSION['login_attempts'] ?? 0) + 1;
+}
+
+function clear_failed_login_attempts(): void
+{
+    unset($_SESSION['login_attempts'], $_SESSION['login_attempt_time']);
+}
+
 function login_user(string $email, string $password): array
 {
+    $rateLimit = login_rate_limit_status();
+
+    if ($rateLimit['locked']) {
+        $minutes = (int) ceil(((int) $rateLimit['remaining']) / 60);
+
+        return [
+            'success' => false,
+            'message' => 'Terlalu banyak percobaan login gagal. Coba lagi dalam ' . $minutes . ' menit',
+            'role' => null,
+        ];
+    }
+
     try {
         $pdo = Database::getInstance()->getConnection();
         $stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');
@@ -11,6 +65,8 @@ function login_user(string $email, string $password): array
         $user = $stmt->fetch();
 
         if (!$user || !password_verify($password, $user['password'])) {
+            record_failed_login_attempt();
+
             return [
                 'success' => false,
                 'message' => 'Email atau password salah',
@@ -19,6 +75,8 @@ function login_user(string $email, string $password): array
         }
 
         if ((int) $user['is_active'] !== 1) {
+            record_failed_login_attempt();
+
             return [
                 'success' => false,
                 'message' => 'Akun tidak aktif. Silakan hubungi administrator',
@@ -34,6 +92,7 @@ function login_user(string $email, string $password): array
         $_SESSION['user_email'] = $user['email'];
         $_SESSION['login_time'] = time();
 
+        clear_failed_login_attempts();
         update_last_login((int) $user['id']);
         log_activity((int) $user['id'], 'login', 'User berhasil login');
 

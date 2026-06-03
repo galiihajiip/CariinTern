@@ -1,10 +1,14 @@
 <?php
 
-define('APP_ENV', 'development');
+define('APP_ENV', 'production');
 
 if (APP_ENV === 'development') {
     error_reporting(E_ALL);
     ini_set('display_errors', 1);
+} else {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
 }
 
 define('DB_HOST', 'localhost');
