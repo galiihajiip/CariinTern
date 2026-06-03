@@ -380,6 +380,7 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                         <div class="modal-footer">
                             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tidak</button>
                             <form method="POST" action="<?= rtrim(BASE_URL, '/'); ?>/student/applications/cancel.php" class="d-inline">
+                                <?= csrf_field(); ?>
                                 <input type="hidden" name="application_id" value="<?= $applicationId; ?>">
                                 <button type="submit" class="btn btn-danger">Ya, Batalkan</button>
                             </form>

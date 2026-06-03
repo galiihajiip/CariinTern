@@ -295,6 +295,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
                             </div>
 
                             <form class="applicant-status-form border rounded-3 p-3" data-application-id="<?= $applicationId; ?>">
+                                <?= csrf_field(); ?>
                                 <input type="hidden" name="action" value="update_status">
                                 <input type="hidden" name="application_id" value="<?= $applicationId; ?>">
 
@@ -341,8 +342,9 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
         bootstrap.Toast.getOrCreateInstance(applicantToast).show();
     }
 
-    async function updateApplicantStatus(applicationId, newStatus, notes) {
+    async function updateApplicantStatus(applicationId, newStatus, notes, csrfToken) {
         const formData = new FormData();
+        formData.append('csrf_token', csrfToken);
         formData.append('application_id', applicationId);
         formData.append('new_status', newStatus);
         formData.append('notes', notes);
@@ -368,13 +370,14 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
             const applicationId = form.dataset.applicationId;
             const newStatus = form.querySelector('[name="new_status"]').value;
             const notes = form.querySelector('[name="notes"]').value;
+            const csrfToken = form.querySelector('[name="csrf_token"]').value;
 
             button.disabled = true;
             buttonText.classList.add('d-none');
             buttonLoading.classList.remove('d-none');
 
             try {
-                const result = await updateApplicantStatus(applicationId, newStatus, notes);
+                const result = await updateApplicantStatus(applicationId, newStatus, notes, csrfToken);
 
                 if (!result.success) {
                     showApplicantToast('danger', result.message || 'Status gagal diperbarui.');

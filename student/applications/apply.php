@@ -127,6 +127,11 @@ try {
     $deadlineClass = $deadlineDays < 3 ? 'text-danger' : ($deadlineDays <= 7 ? 'text-warning' : 'text-success');
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+            set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+            redirect(BASE_URL . '/student/applications/apply.php?job_id=' . $jobId);
+        }
+
         $coverLetter = trim((string) ($_POST['cover_letter'] ?? ''));
 
         if ($coverLetter !== '' && strlen($coverLetter) < 50) {
@@ -334,6 +339,7 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                 </div>
 
                 <form id="applicationForm" class="needs-validation" method="POST" action="apply.php?job_id=<?= $jobId; ?>" novalidate>
+                    <?= csrf_field(); ?>
                     <div class="mb-3">
                         <div class="d-flex justify-content-between align-items-center gap-2">
                             <label for="coverLetter" class="form-label mb-0">Cover Letter <span class="text-muted">(opsional)</span></label>

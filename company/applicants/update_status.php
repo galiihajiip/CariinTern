@@ -44,6 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     ], 405);
 }
 
+if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+    applicant_status_json([
+        'success' => false,
+        'message' => 'Permintaan tidak valid. Silakan coba lagi.',
+    ], 403);
+}
+
 if (!isset($_SESSION['user_id'])) {
     applicant_status_json([
         'success' => false,

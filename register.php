@@ -17,6 +17,11 @@ $old = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/register.php');
+    }
+
     $name = trim((string) ($_POST['name'] ?? ''));
     $email = trim((string) ($_POST['email'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
@@ -206,6 +211,7 @@ function get_default_study_program_id(): ?int
                     <p class="text-muted mb-4">Pilih tipe akun sesuai kebutuhan Anda.</p>
 
                     <form id="registerForm" method="POST" action="register.php" novalidate>
+                        <?= csrf_field(); ?>
                         <div class="mb-3">
                             <label for="name" class="form-label">Nama Lengkap</label>
                             <div class="input-group">

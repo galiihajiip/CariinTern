@@ -85,6 +85,11 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/company/profile.php');
+    }
+
     $companyName = trim((string) ($_POST['company_name'] ?? ''));
     $industry = trim((string) ($_POST['industry'] ?? ''));
     $description = trim((string) ($_POST['description'] ?? ''));
@@ -219,6 +224,7 @@ require_once __DIR__ . '/../layouts/sidebar_company.php';
                 <h2 class="h5 fw-bold mb-3">Edit Profil</h2>
 
                 <form id="profileForm" class="needs-validation" method="POST" action="profile.php" enctype="multipart/form-data" novalidate>
+                    <?= csrf_field(); ?>
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
                             <label for="companyName" class="form-label">Nama Perusahaan</label>

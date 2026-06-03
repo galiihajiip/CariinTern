@@ -24,6 +24,11 @@ if (!in_array($selectedRole, $allowedRoles, true)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/admin/users/index.php');
+    }
+
     $userId = (int) ($_POST['user_id'] ?? 0);
     $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 
@@ -344,6 +349,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
                         'search' => $search,
                         'page' => $currentPage > 1 ? $currentPage : null,
                     ], static fn ($value) => $value !== null && $value !== '')); ?>">
+                        <?= csrf_field(); ?>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="user_id" value="<?= $userId; ?>">
                         <button type="submit" class="btn btn-danger">

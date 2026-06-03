@@ -102,6 +102,11 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(company_jobs_redirect_url($selectedStatus, $currentPage));
+    }
+
     $action = (string) ($_POST['action'] ?? '');
     $jobId = (int) ($_POST['job_id'] ?? 0);
 
@@ -387,6 +392,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
                     <form method="POST" action="<?= company_jobs_redirect_url($selectedStatus, $currentPage); ?>">
+                        <?= csrf_field(); ?>
                         <input type="hidden" name="action" value="toggle_status">
                         <input type="hidden" name="job_id" value="<?= $jobId; ?>">
                         <button type="submit" class="btn btn-warning">
@@ -414,6 +420,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
                     <form method="POST" action="<?= rtrim(BASE_URL, '/'); ?>/company/jobs/delete.php">
+                        <?= csrf_field(); ?>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="job_id" value="<?= $jobId; ?>">
                         <button type="submit" class="btn btn-danger">

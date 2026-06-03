@@ -149,6 +149,11 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'personal') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/student/profile.php');
+    }
+
     $fullName = trim((string) ($_POST['full_name'] ?? ''));
     $nim = strtoupper(trim((string) ($_POST['student_id'] ?? '')));
     $phone = trim((string) ($_POST['phone'] ?? ''));
@@ -283,6 +288,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'pe
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'documents') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/student/profile.php?tab=documents');
+    }
+
     $activeTab = 'documents';
     $documentAction = trim((string) ($_POST['document_action'] ?? 'upload'));
     $errors = [];
@@ -489,6 +499,7 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
                         <h2 class="h5 fw-bold mb-3">Data Diri</h2>
 
                         <form id="personalForm" class="needs-validation" method="POST" action="profile.php" novalidate>
+                            <?= csrf_field(); ?>
                             <input type="hidden" name="form_type" value="personal">
 
                             <div class="row g-3">
@@ -571,6 +582,7 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
 
     <div class="tab-pane fade <?= $activeTab === 'documents' ? 'show active' : ''; ?>" id="documents-pane" role="tabpanel" aria-labelledby="documents-tab" tabindex="0">
         <form id="documentsForm" class="needs-validation" method="POST" action="profile.php?tab=documents" enctype="multipart/form-data" novalidate>
+            <?= csrf_field(); ?>
             <input type="hidden" name="form_type" value="documents">
             <input type="hidden" name="document_action" value="upload">
 

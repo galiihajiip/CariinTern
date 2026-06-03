@@ -13,6 +13,11 @@ if (is_logged_in()) {
 $emailValue = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/login.php');
+    }
+
     $email = sanitize((string) ($_POST['email'] ?? ''));
     $password = trim((string) ($_POST['password'] ?? ''));
     $emailValue = $email;
@@ -83,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <p class="text-muted mb-4">Gunakan email dan password akun Anda.</p>
 
                     <form id="loginForm" method="POST" action="login.php" novalidate>
+                        <?= csrf_field(); ?>
                         <div class="mb-3">
                             <label for="email" class="form-label">Email</label>
                             <div class="input-group">

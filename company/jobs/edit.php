@@ -105,6 +105,11 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/company/jobs/edit.php?id=' . $jobId);
+    }
+
     $title = trim((string) ($_POST['title'] ?? ''));
     $description = trim((string) ($_POST['description'] ?? ''));
     $requirements = trim((string) ($_POST['requirements'] ?? ''));
@@ -264,6 +269,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
 <?= display_flash(); ?>
 
 <form id="jobForm" class="needs-validation" method="POST" action="edit.php?id=<?= $jobId; ?>" novalidate>
+    <?= csrf_field(); ?>
     <div class="row g-4">
         <div class="col-12 col-xl-8">
             <div class="card border-0 shadow-sm h-100">

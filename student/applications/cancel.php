@@ -13,6 +13,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect(BASE_URL . '/student/applications/index.php');
 }
 
+if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+    set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+    redirect(BASE_URL . '/student/applications/index.php');
+}
+
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $applicationId = (int) ($_POST['application_id'] ?? 0);
 

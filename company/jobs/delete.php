@@ -13,6 +13,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect(BASE_URL . '/company/jobs/index.php');
 }
 
+if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+    set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+    redirect(BASE_URL . '/company/jobs/index.php');
+}
+
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $jobId = (int) ($_POST['job_id'] ?? 0);
 

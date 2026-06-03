@@ -12,6 +12,11 @@ $page_title = 'Kategori Magang';
 $categories = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggle_status') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/admin/categories/index.php');
+    }
+
     $categoryId = (int) ($_POST['category_id'] ?? 0);
 
     if ($categoryId <= 0) {
@@ -116,6 +121,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
                                     </a>
 
                                     <form method="POST" action="index.php" class="d-inline">
+                                        <?= csrf_field(); ?>
                                         <input type="hidden" name="action" value="toggle_status">
                                         <input type="hidden" name="category_id" value="<?= $categoryId; ?>">
                                         <button type="submit" class="btn btn-sm btn-outline-warning">
@@ -170,6 +176,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
                     <form method="POST" action="<?= rtrim(BASE_URL, '/'); ?>/admin/categories/delete.php">
+                        <?= csrf_field(); ?>
                         <input type="hidden" name="category_id" value="<?= $categoryId; ?>">
                         <button type="submit" class="btn btn-danger">
                             <i class="bi bi-trash me-1"></i>

@@ -21,6 +21,11 @@ if (!in_array($activeTab, $allowedTabs, true)) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/admin/companies/index.php?status=' . urlencode($activeTab));
+    }
+
     $action = (string) ($_POST['action'] ?? '');
     $companyId = (int) ($_POST['company_id'] ?? 0);
     $adminId = (int) ($_SESSION['user_id'] ?? 0);
@@ -274,6 +279,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
                     <form method="POST" action="index.php?status=<?= urlencode($activeTab); ?>">
+                        <?= csrf_field(); ?>
                         <input type="hidden" name="action" value="verify">
                         <input type="hidden" name="company_id" value="<?= $companyId; ?>">
                         <button type="submit" class="btn btn-success">
@@ -294,6 +300,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
                 </div>
                 <form method="POST" action="index.php?status=<?= urlencode($activeTab); ?>">
+                    <?= csrf_field(); ?>
                     <div class="modal-body">
                         <p class="mb-2">Tolak verifikasi untuk perusahaan:</p>
                         <div class="fw-semibold"><?= sanitize((string) $company['company_name']); ?></div>

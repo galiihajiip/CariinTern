@@ -129,6 +129,11 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/admin/users/edit.php?id=' . $userId);
+    }
+
     $name = trim((string) ($_POST['name'] ?? ''));
     $email = trim((string) ($_POST['email'] ?? ''));
     $password = (string) ($_POST['password'] ?? '');
@@ -250,6 +255,7 @@ require_once __DIR__ . '/../../layouts/sidebar_admin.php';
 <div class="card border-0 shadow-sm">
     <div class="card-body">
         <form id="userForm" class="needs-validation" method="POST" action="edit.php?id=<?= $userId; ?>" novalidate>
+            <?= csrf_field(); ?>
             <div class="row g-3">
                 <div class="col-12 col-md-6">
                     <label for="name" class="form-label">Nama Lengkap</label>
