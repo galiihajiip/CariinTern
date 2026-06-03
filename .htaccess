@@ -1,0 +1,10 @@
+Options -Indexes
+ErrorDocument 404 /internship-system/errors/404.php
+ErrorDocument 403 /internship-system/errors/403.php
+ErrorDocument 500 /internship-system/errors/500.php
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
