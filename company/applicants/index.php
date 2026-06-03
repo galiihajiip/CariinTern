@@ -53,13 +53,6 @@ function company_applicants_badge(string $status): string
     return '<span class="badge bg-' . ($classes[$status] ?? 'secondary') . '">' . sanitize(company_applicants_status_label($status)) . '</span>';
 }
 
-function company_applicants_json(array $payload): void
-{
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($payload);
-    exit;
-}
-
 try {
     $pdo = Database::getInstance()->getConnection();
     $profileStmt = $pdo->prepare(
@@ -78,76 +71,6 @@ try {
 } catch (PDOException $exception) {
     error_log('Load company for applicants failed: ' . $exception->getMessage());
     set_flash('error', 'Profil perusahaan gagal dimuat');
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_status') {
-    $applicationId = (int) ($_POST['application_id'] ?? 0);
-    $newStatus = trim((string) ($_POST['status'] ?? ''));
-    $notes = trim((string) ($_POST['notes'] ?? ''));
-
-    if ($companyId <= 0) {
-        company_applicants_json(['success' => false, 'message' => 'Profil perusahaan tidak ditemukan']);
-    }
-
-    if ($applicationId <= 0) {
-        company_applicants_json(['success' => false, 'message' => 'Lamaran tidak valid']);
-    }
-
-    if (!in_array($newStatus, $allowedStatuses, true)) {
-        company_applicants_json(['success' => false, 'message' => 'Status tidak valid']);
-    }
-
-    try {
-        $checkStmt = $pdo->prepare(
-            'SELECT applications.id, applications.status, job_listings.title AS job_title, student_profiles.full_name
-             FROM applications
-             INNER JOIN job_listings ON job_listings.id = applications.job_id
-             INNER JOIN student_profiles ON student_profiles.id = applications.student_id
-             WHERE applications.id = :application_id AND job_listings.company_id = :company_id
-             LIMIT 1'
-        );
-        $checkStmt->execute([
-            ':application_id' => $applicationId,
-            ':company_id' => $companyId,
-        ]);
-        $application = $checkStmt->fetch();
-
-        if (!$application) {
-            company_applicants_json(['success' => false, 'message' => 'Lamaran tidak ditemukan atau bukan milik perusahaan Anda']);
-        }
-
-        $updateStmt = $pdo->prepare(
-            'UPDATE applications
-             SET status = :status,
-                 notes = :notes,
-                 reviewed_at = NOW(),
-                 reviewed_by = :reviewed_by
-             WHERE id = :application_id'
-        );
-        $updateStmt->execute([
-            ':status' => $newStatus,
-            ':notes' => $notes !== '' ? $notes : null,
-            ':reviewed_by' => $userId,
-            ':application_id' => $applicationId,
-        ]);
-
-        log_activity(
-            $userId,
-            'update_application_status',
-            'Perusahaan mengubah status lamaran ' . (string) $application['full_name'] . ' untuk lowongan ' . (string) $application['job_title'] . ' menjadi ' . $newStatus
-        );
-
-        company_applicants_json([
-            'success' => true,
-            'new_status' => $newStatus,
-            'badge_html' => company_applicants_badge($newStatus),
-            'label' => company_applicants_status_label($newStatus),
-            'message' => 'Status lamaran berhasil diperbarui',
-        ]);
-    } catch (PDOException $exception) {
-        error_log('Update applicant status failed: ' . $exception->getMessage());
-        company_applicants_json(['success' => false, 'message' => 'Status lamaran gagal diperbarui']);
-    }
 }
 
 try {
@@ -224,7 +147,14 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
 
 <?= display_flash(); ?>
 
-<div id="ajaxAlert" class="alert d-none" role="alert"></div>
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="applicantToast" class="toast align-items-center text-bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body" id="applicantToastBody">Status berhasil diperbarui.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Tutup"></button>
+        </div>
+    </div>
+</div>
 
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-body">
@@ -370,8 +300,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
 
                                 <div class="mb-3">
                                     <label for="statusSelect<?= $applicationId; ?>" class="form-label">Aksi Status</label>
-                                    <select class="form-select" id="statusSelect<?= $applicationId; ?>" name="status" required>
-                                        <option value="pending" <?= $currentStatus === 'pending' ? 'selected' : ''; ?>>Pending</option>
+                                    <select class="form-select" id="statusSelect<?= $applicationId; ?>" name="new_status" required>
                                         <option value="review" <?= $currentStatus === 'review' ? 'selected' : ''; ?>>Tandai Review</option>
                                         <option value="accepted" <?= $currentStatus === 'accepted' ? 'selected' : ''; ?>>Terima</option>
                                         <option value="rejected" <?= $currentStatus === 'rejected' ? 'selected' : ''; ?>>Tolak</option>
@@ -402,13 +331,31 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
 </div>
 
 <script>
-    const ajaxAlert = document.getElementById('ajaxAlert');
+    const applicantToast = document.getElementById('applicantToast');
+    const applicantToastBody = document.getElementById('applicantToastBody');
 
-    function showAjaxAlert(type, message) {
-        ajaxAlert.className = 'alert alert-' + type;
-        ajaxAlert.textContent = message;
-        ajaxAlert.classList.remove('d-none');
-        window.setTimeout(() => ajaxAlert.classList.add('d-none'), 4000);
+    function showApplicantToast(type, message) {
+        applicantToast.classList.remove('text-bg-success', 'text-bg-danger');
+        applicantToast.classList.add(type === 'success' ? 'text-bg-success' : 'text-bg-danger');
+        applicantToastBody.textContent = message;
+        bootstrap.Toast.getOrCreateInstance(applicantToast).show();
+    }
+
+    async function updateApplicantStatus(applicationId, newStatus, notes) {
+        const formData = new FormData();
+        formData.append('application_id', applicationId);
+        formData.append('new_status', newStatus);
+        formData.append('notes', notes);
+
+        const response = await fetch('update_status.php', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'fetch'
+            }
+        });
+
+        return response.json();
     }
 
     document.querySelectorAll('.applicant-status-form').forEach(form => {
@@ -419,31 +366,25 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
             const buttonText = form.querySelector('.button-text');
             const buttonLoading = form.querySelector('.button-loading');
             const applicationId = form.dataset.applicationId;
-            const formData = new FormData(form);
+            const newStatus = form.querySelector('[name="new_status"]').value;
+            const notes = form.querySelector('[name="notes"]').value;
 
             button.disabled = true;
             buttonText.classList.add('d-none');
             buttonLoading.classList.remove('d-none');
 
             try {
-                const response = await fetch('index.php', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-Requested-With': 'fetch'
-                    }
-                });
-                const result = await response.json();
+                const result = await updateApplicantStatus(applicationId, newStatus, notes);
 
                 if (!result.success) {
-                    showAjaxAlert('danger', result.message || 'Status gagal diperbarui.');
+                    showApplicantToast('danger', result.message || 'Status gagal diperbarui.');
                     return;
                 }
 
                 document.getElementById('statusBadge' + applicationId).innerHTML = result.badge_html;
-                showAjaxAlert('success', result.message || 'Status berhasil diperbarui.');
+                showApplicantToast('success', result.message || 'Status berhasil diperbarui.');
             } catch (error) {
-                showAjaxAlert('danger', 'Terjadi kesalahan koneksi. Silakan coba lagi.');
+                showApplicantToast('danger', 'Terjadi kesalahan koneksi. Silakan coba lagi.');
             } finally {
                 button.disabled = false;
                 buttonText.classList.remove('d-none');
