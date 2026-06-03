@@ -133,49 +133,6 @@ try {
         ? 100
         : (int) ($_SESSION['profile_completed'] ?? 0);
 
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel') {
-        $applicationId = (int) ($_POST['application_id'] ?? 0);
-
-        $cancelStmt = $pdo->prepare(
-            'SELECT applications.id, applications.status, job_listings.title
-             FROM applications
-             INNER JOIN job_listings ON job_listings.id = applications.job_id
-             WHERE applications.id = :application_id
-               AND applications.student_id = :student_id
-             LIMIT 1'
-        );
-        $cancelStmt->execute([
-            ':application_id' => $applicationId,
-            ':student_id' => $studentId,
-        ]);
-        $application = $cancelStmt->fetch();
-
-        if (!$application) {
-            set_flash('error', 'Lamaran tidak ditemukan');
-        } elseif ((string) $application['status'] !== 'pending') {
-            set_flash('warning', 'Lamaran hanya bisa dibatalkan saat masih menunggu review');
-        } else {
-            $deleteStmt = $pdo->prepare(
-                'DELETE FROM applications
-                 WHERE id = :application_id AND student_id = :student_id AND status = \'pending\''
-            );
-            $deleteStmt->execute([
-                ':application_id' => $applicationId,
-                ':student_id' => $studentId,
-            ]);
-
-            log_activity(
-                $userId,
-                'application_cancelled',
-                'Mahasiswa membatalkan lamaran untuk lowongan: ' . (string) $application['title']
-            );
-
-            set_flash('success', 'Lamaran berhasil dibatalkan');
-        }
-
-        redirect(student_applications_tab_url($selectedStatus));
-    }
-
     $countsStmt = $pdo->prepare(
         'SELECT status, COUNT(*) AS total
          FROM applications
@@ -422,8 +379,7 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tidak</button>
-                            <form method="POST" action="<?= student_applications_tab_url($selectedStatus); ?>" class="d-inline">
-                                <input type="hidden" name="action" value="cancel">
+                            <form method="POST" action="<?= rtrim(BASE_URL, '/'); ?>/student/applications/cancel.php" class="d-inline">
                                 <input type="hidden" name="application_id" value="<?= $applicationId; ?>">
                                 <button type="submit" class="btn btn-danger">Ya, Batalkan</button>
                             </form>
