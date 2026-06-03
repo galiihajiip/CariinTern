@@ -1,0 +1,441 @@
+<?php
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../../includes/auth.php';
+
+require_role('company');
+
+$page_title = 'Edit Lowongan';
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$jobId = (int) ($_GET['id'] ?? 0);
+$companyProfile = null;
+$companyId = 0;
+$job = null;
+$categories = [];
+$today = date('Y-m-d');
+$old = [
+    'title' => '',
+    'description' => '',
+    'requirements' => '',
+    'category_id' => '',
+    'location' => '',
+    'quota' => '1',
+    'start_date' => $today,
+    'end_date' => '',
+    'deadline' => '',
+    'status' => 'draft',
+];
+
+function company_job_edit_date(string $value): ?DateTimeImmutable
+{
+    $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+
+    return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value ? $date : null;
+}
+
+if ($jobId <= 0) {
+    set_flash('error', 'Lowongan tidak valid');
+    redirect(BASE_URL . '/company/jobs/index.php');
+}
+
+try {
+    $pdo = Database::getInstance()->getConnection();
+    $profileStmt = $pdo->prepare(
+        'SELECT id, company_name, is_verified
+         FROM company_profiles
+         WHERE user_id = :user_id
+         LIMIT 1'
+    );
+    $profileStmt->execute([':user_id' => $userId]);
+    $companyProfile = $profileStmt->fetch();
+
+    if (!$companyProfile) {
+        set_flash('error', 'Lengkapi profil perusahaan terlebih dahulu');
+        redirect(BASE_URL . '/company/profile.php');
+    }
+
+    $companyId = (int) $companyProfile['id'];
+    $_SESSION['company_verified'] = (int) $companyProfile['is_verified'] === 1;
+
+    $jobStmt = $pdo->prepare(
+        'SELECT *
+         FROM job_listings
+         WHERE id = :job_id AND company_id = :company_id
+         LIMIT 1'
+    );
+    $jobStmt->execute([
+        ':job_id' => $jobId,
+        ':company_id' => $companyId,
+    ]);
+    $job = $jobStmt->fetch();
+
+    if (!$job) {
+        set_flash('error', 'Lowongan tidak ditemukan atau bukan milik perusahaan Anda');
+        redirect(BASE_URL . '/company/jobs/index.php');
+    }
+
+    $categoryStmt = $pdo->prepare(
+        'SELECT id, name
+         FROM internship_categories
+         WHERE is_active = 1 OR id = :category_id
+         ORDER BY name ASC'
+    );
+    $categoryStmt->execute([':category_id' => (int) $job['category_id']]);
+    $categories = $categoryStmt->fetchAll();
+
+    $old = [
+        'title' => sanitize((string) $job['title']),
+        'description' => sanitize((string) $job['description']),
+        'requirements' => sanitize((string) $job['requirements']),
+        'category_id' => (string) (int) $job['category_id'],
+        'location' => sanitize((string) $job['location']),
+        'quota' => (string) (int) $job['quota'],
+        'start_date' => sanitize((string) $job['start_date']),
+        'end_date' => sanitize((string) $job['end_date']),
+        'deadline' => sanitize((string) $job['deadline']),
+        'status' => sanitize((string) $job['status']),
+    ];
+} catch (PDOException $exception) {
+    error_log('Prepare company job edit failed: ' . $exception->getMessage());
+    set_flash('error', 'Halaman edit lowongan gagal dimuat');
+    redirect(BASE_URL . '/company/jobs/index.php');
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $title = trim((string) ($_POST['title'] ?? ''));
+    $description = trim((string) ($_POST['description'] ?? ''));
+    $requirements = trim((string) ($_POST['requirements'] ?? ''));
+    $categoryId = (int) ($_POST['category_id'] ?? 0);
+    $location = trim((string) ($_POST['location'] ?? ''));
+    $quota = (int) ($_POST['quota'] ?? 0);
+    $startDateInput = trim((string) ($_POST['start_date'] ?? ''));
+    $endDateInput = trim((string) ($_POST['end_date'] ?? ''));
+    $deadlineInput = trim((string) ($_POST['deadline'] ?? ''));
+    $status = trim((string) ($_POST['status'] ?? 'draft'));
+    $errors = [];
+
+    $old = [
+        'title' => sanitize($title),
+        'description' => sanitize($description),
+        'requirements' => sanitize($requirements),
+        'category_id' => (string) $categoryId,
+        'location' => sanitize($location),
+        'quota' => (string) max(0, $quota),
+        'start_date' => sanitize($startDateInput),
+        'end_date' => sanitize($endDateInput),
+        'deadline' => sanitize($deadlineInput),
+        'status' => sanitize($status),
+    ];
+
+    if ($title === '') {
+        $errors[] = 'Judul lowongan wajib diisi';
+    } elseif (strlen($title) < 10) {
+        $errors[] = 'Judul lowongan minimal 10 karakter';
+    }
+
+    if ($description === '') {
+        $errors[] = 'Deskripsi lowongan wajib diisi';
+    } elseif (strlen($description) < 50) {
+        $errors[] = 'Deskripsi lowongan minimal 50 karakter';
+    }
+
+    if ($requirements === '') {
+        $errors[] = 'Persyaratan wajib diisi';
+    }
+
+    if ($location === '') {
+        $errors[] = 'Lokasi wajib diisi';
+    }
+
+    if ($categoryId <= 0) {
+        $errors[] = 'Kategori wajib dipilih';
+    } else {
+        $categoryCheckStmt = $pdo->prepare('SELECT COUNT(*) FROM internship_categories WHERE id = :id AND (is_active = 1 OR id = :current_category_id)');
+        $categoryCheckStmt->execute([
+            ':id' => $categoryId,
+            ':current_category_id' => (int) $job['category_id'],
+        ]);
+
+        if ((int) $categoryCheckStmt->fetchColumn() === 0) {
+            $errors[] = 'Kategori tidak valid atau tidak aktif';
+        }
+    }
+
+    if ($quota <= 0) {
+        $errors[] = 'Kuota wajib berupa angka positif';
+    } elseif ($quota > 100) {
+        $errors[] = 'Kuota maksimal 100';
+    }
+
+    $startDate = company_job_edit_date($startDateInput);
+    $endDate = company_job_edit_date($endDateInput);
+    $deadline = company_job_edit_date($deadlineInput);
+    $todayDate = new DateTimeImmutable('today');
+
+    if (!$startDate) {
+        $errors[] = 'Tanggal mulai wajib diisi dengan format valid';
+    } elseif ($startDate < $todayDate) {
+        $errors[] = 'Tanggal mulai tidak boleh di masa lalu';
+    }
+
+    if (!$endDate) {
+        $errors[] = 'Tanggal selesai wajib diisi dengan format valid';
+    } elseif ($startDate && $endDate <= $startDate) {
+        $errors[] = 'Tanggal selesai harus setelah tanggal mulai';
+    }
+
+    if (!$deadline) {
+        $errors[] = 'Deadline wajib diisi dengan format valid';
+    } elseif ($endDate && $deadline >= $endDate) {
+        $errors[] = 'Deadline harus sebelum tanggal selesai';
+    }
+
+    if (!in_array($status, ['open', 'draft', 'closed'], true)) {
+        $errors[] = 'Status lowongan tidak valid';
+    }
+
+    if ((string) $job['status'] === 'closed' && $status === 'open' && $deadline && $deadline < $todayDate) {
+        $errors[] = 'Lowongan yang sudah ditutup tidak bisa dibuka kembali karena deadline sudah lewat';
+    }
+
+    if ($errors === []) {
+        try {
+            $stmt = $pdo->prepare(
+                'UPDATE job_listings
+                 SET category_id = :category_id,
+                     title = :title,
+                     description = :description,
+                     requirements = :requirements,
+                     location = :location,
+                     quota = :quota,
+                     start_date = :start_date,
+                     end_date = :end_date,
+                     deadline = :deadline,
+                     status = :status
+                 WHERE id = :job_id AND company_id = :company_id'
+            );
+            $stmt->execute([
+                ':category_id' => $categoryId,
+                ':title' => $title,
+                ':description' => $description,
+                ':requirements' => $requirements,
+                ':location' => $location,
+                ':quota' => $quota,
+                ':start_date' => $startDateInput,
+                ':end_date' => $endDateInput,
+                ':deadline' => $deadlineInput,
+                ':status' => $status,
+                ':job_id' => $jobId,
+                ':company_id' => $companyId,
+            ]);
+
+            log_activity($userId, 'update_job_listing', 'Perusahaan mengubah lowongan: ' . $title);
+            set_flash('success', 'Lowongan berhasil diperbarui');
+            redirect(BASE_URL . '/company/jobs/index.php?status=' . $status);
+        } catch (PDOException $exception) {
+            error_log('Update company job failed: ' . $exception->getMessage());
+            $errors[] = 'Lowongan gagal diperbarui. Silakan coba lagi nanti';
+        }
+    }
+
+    foreach ($errors as $error) {
+        set_flash('error', $error);
+    }
+}
+
+require_once __DIR__ . '/../../layouts/header.php';
+require_once __DIR__ . '/../../layouts/sidebar_company.php';
+?>
+
+<div class="page-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>
+        <h1 class="h3 fw-bold mb-1">Edit Lowongan</h1>
+        <p class="text-muted mb-0">Perbarui detail lowongan milik <?= sanitize((string) $companyProfile['company_name']); ?>.</p>
+    </div>
+    <a href="<?= rtrim(BASE_URL, '/'); ?>/company/jobs/index.php" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>
+        Kembali
+    </a>
+</div>
+
+<?= display_flash(); ?>
+
+<form id="jobForm" class="needs-validation" method="POST" action="edit.php?id=<?= $jobId; ?>" novalidate>
+    <div class="row g-4">
+        <div class="col-12 col-xl-8">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h2 class="h5 fw-bold mb-3">Informasi Lowongan</h2>
+
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Judul Lowongan</label>
+                        <input type="text" class="form-control" id="title" name="title" value="<?= $old['title']; ?>" minlength="10" required>
+                        <div class="form-text">Minimal 10 karakter.</div>
+                        <div class="invalid-feedback">Judul lowongan wajib diisi minimal 10 karakter.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center gap-2">
+                            <label for="description" class="form-label mb-0">Deskripsi</label>
+                            <span class="small text-muted"><span id="descriptionCount">0</span>/50 karakter minimum</span>
+                        </div>
+                        <textarea class="form-control mt-2" id="description" name="description" rows="8" minlength="50" required><?= $old['description']; ?></textarea>
+                        <div class="form-text">Jelaskan tanggung jawab, tujuan magang, dan gambaran pekerjaan.</div>
+                        <div class="invalid-feedback">Deskripsi wajib diisi minimal 50 karakter.</div>
+                    </div>
+
+                    <div>
+                        <label for="requirements" class="form-label">Persyaratan</label>
+                        <textarea class="form-control" id="requirements" name="requirements" rows="7" required><?= $old['requirements']; ?></textarea>
+                        <div class="form-text">Tuliskan skill, jurusan, dokumen, atau kriteria lain yang dibutuhkan.</div>
+                        <div class="invalid-feedback">Persyaratan wajib diisi.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h2 class="h5 fw-bold mb-3">Pengaturan</h2>
+
+                    <div class="mb-3">
+                        <label for="categoryId" class="form-label">Kategori</label>
+                        <select class="form-select" id="categoryId" name="category_id" required>
+                            <option value="">Pilih Kategori</option>
+                            <?php foreach ($categories as $category): ?>
+                                <?php $categoryId = (int) $category['id']; ?>
+                                <option value="<?= $categoryId; ?>" <?= $old['category_id'] === (string) $categoryId ? 'selected' : ''; ?>>
+                                    <?= sanitize((string) $category['name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="invalid-feedback">Kategori wajib dipilih.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="location" class="form-label">Lokasi</label>
+                        <input type="text" class="form-control" id="location" name="location" value="<?= $old['location']; ?>" required>
+                        <div class="invalid-feedback">Lokasi wajib diisi.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="quota" class="form-label">Kuota</label>
+                        <input type="number" class="form-control" id="quota" name="quota" value="<?= $old['quota']; ?>" min="1" max="100" required>
+                        <div class="invalid-feedback">Kuota wajib 1 sampai 100.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="startDate" class="form-label">Tanggal Mulai</label>
+                        <input type="date" class="form-control" id="startDate" name="start_date" value="<?= $old['start_date']; ?>" min="<?= $today; ?>" required>
+                        <div class="invalid-feedback">Tanggal mulai tidak boleh di masa lalu.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="endDate" class="form-label">Tanggal Selesai</label>
+                        <input type="date" class="form-control" id="endDate" name="end_date" value="<?= $old['end_date']; ?>" required>
+                        <div class="invalid-feedback">Tanggal selesai harus setelah tanggal mulai.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="deadline" class="form-label">Deadline Lamaran</label>
+                        <input type="date" class="form-control" id="deadline" name="deadline" value="<?= $old['deadline']; ?>" required>
+                        <div class="invalid-feedback">Deadline harus sebelum tanggal selesai.</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label d-block">Status</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="status" id="statusOpen" value="open" <?= $old['status'] === 'open' ? 'checked' : ''; ?>>
+                            <label class="form-check-label" for="statusOpen">Buka</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="status" id="statusDraft" value="draft" <?= $old['status'] === 'draft' ? 'checked' : ''; ?>>
+                            <label class="form-check-label" for="statusDraft">Draft</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="status" id="statusClosed" value="closed" <?= $old['status'] === 'closed' ? 'checked' : ''; ?>>
+                            <label class="form-check-label" for="statusClosed">Ditutup</label>
+                        </div>
+                        <div class="form-text">Lowongan closed tidak bisa dibuka kembali jika deadline sudah lewat.</div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-1"></i>
+                            Simpan Perubahan
+                        </button>
+                        <a href="<?= rtrim(BASE_URL, '/'); ?>/company/jobs/index.php" class="btn btn-outline-secondary">Batal</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+<script>
+    const form = document.getElementById('jobForm');
+    const description = document.getElementById('description');
+    const descriptionCount = document.getElementById('descriptionCount');
+    const startDate = document.getElementById('startDate');
+    const endDate = document.getElementById('endDate');
+    const deadline = document.getElementById('deadline');
+
+    function updateDescriptionCount() {
+        const length = description.value.trim().length;
+        descriptionCount.textContent = length;
+        descriptionCount.classList.toggle('text-danger', length < 50);
+        descriptionCount.classList.toggle('text-success', length >= 50);
+    }
+
+    function validateDates() {
+        const today = new Date('<?= $today; ?>T00:00:00');
+        const start = startDate.value ? new Date(startDate.value + 'T00:00:00') : null;
+        const end = endDate.value ? new Date(endDate.value + 'T00:00:00') : null;
+        const closeDate = deadline.value ? new Date(deadline.value + 'T00:00:00') : null;
+        let valid = true;
+
+        startDate.setCustomValidity('');
+        endDate.setCustomValidity('');
+        deadline.setCustomValidity('');
+
+        if (start && start < today) {
+            startDate.setCustomValidity('Tanggal mulai tidak boleh di masa lalu.');
+            valid = false;
+        }
+
+        if (start && end && end <= start) {
+            endDate.setCustomValidity('Tanggal selesai harus setelah tanggal mulai.');
+            valid = false;
+        }
+
+        if (end && closeDate && closeDate >= end) {
+            deadline.setCustomValidity('Deadline harus sebelum tanggal selesai.');
+            valid = false;
+        }
+
+        return valid;
+    }
+
+    description.addEventListener('input', updateDescriptionCount);
+    [startDate, endDate, deadline].forEach(input => input.addEventListener('change', validateDates));
+
+    form.addEventListener('submit', event => {
+        const datesValid = validateDates();
+
+        if (!form.checkValidity() || !datesValid) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        form.classList.add('was-validated');
+    });
+
+    updateDescriptionCount();
+    validateDates();
+</script>
+
+<?php require_once __DIR__ . '/../../layouts/footer.php'; ?>

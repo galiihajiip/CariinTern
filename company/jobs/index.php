@@ -131,24 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             error_log('Toggle company job status failed: ' . $exception->getMessage());
             set_flash('error', 'Status lowongan gagal diperbarui');
         }
-    } elseif ($action === 'delete') {
-        try {
-            $stmt = $pdo->prepare('DELETE FROM job_listings WHERE id = :job_id AND company_id = :company_id');
-            $stmt->execute([
-                ':job_id' => $jobId,
-                ':company_id' => $companyId,
-            ]);
-
-            if ($stmt->rowCount() > 0) {
-                log_activity($userId, 'delete_job_listing', 'Perusahaan menghapus lowongan ID ' . $jobId);
-                set_flash('success', 'Lowongan berhasil dihapus');
-            } else {
-                set_flash('error', 'Lowongan tidak ditemukan atau bukan milik perusahaan Anda');
-            }
-        } catch (PDOException $exception) {
-            error_log('Delete company job failed: ' . $exception->getMessage());
-            set_flash('error', 'Lowongan gagal dihapus');
-        }
     }
 
     redirect(company_jobs_redirect_url($selectedStatus, $currentPage));
@@ -431,7 +413,7 @@ require_once __DIR__ . '/../../layouts/sidebar_company.php';
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Batal</button>
-                    <form method="POST" action="<?= company_jobs_redirect_url($selectedStatus, $currentPage); ?>">
+                    <form method="POST" action="<?= rtrim(BASE_URL, '/'); ?>/company/jobs/delete.php">
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="job_id" value="<?= $jobId; ?>">
                         <button type="submit" class="btn btn-danger">
