@@ -48,7 +48,7 @@ function display_flash(): string
             $safeMessage = htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
 
             $html .= sprintf(
-                '<div class="alert %s alert-dismissible fade show" role="alert">%s<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>',
+                '<div class="alert %s alert-dismissible fade show auto-dismiss" role="alert">%s<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>',
                 $alertClass,
                 $safeMessage
             );
