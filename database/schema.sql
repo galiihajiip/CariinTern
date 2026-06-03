@@ -183,9 +183,11 @@ CREATE TABLE activity_logs (
     action VARCHAR(255) NOT NULL,
     description TEXT NULL,
     ip_address VARCHAR(45) NOT NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_activity_logs_user_id (user_id),
     KEY idx_activity_logs_action (action),
+    KEY idx_activity_logs_is_read (is_read),
     KEY idx_activity_logs_created_at (created_at),
     CONSTRAINT fk_activity_logs_user
         FOREIGN KEY (user_id) REFERENCES users (id)

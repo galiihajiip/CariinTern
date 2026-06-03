@@ -345,6 +345,93 @@ function get_status_badge(string $status): string
     );
 }
 
+function ensure_activity_logs_is_read_column(): void
+{
+    static $checked = false;
+
+    if ($checked) {
+        return;
+    }
+
+    try {
+        $pdo = Database::getInstance()->getConnection();
+        $stmt = $pdo->query("SHOW COLUMNS FROM activity_logs LIKE 'is_read'");
+
+        if ($stmt && $stmt->fetch() === false) {
+            $pdo->exec('ALTER TABLE activity_logs ADD COLUMN is_read TINYINT(1) NOT NULL DEFAULT 0 AFTER ip_address');
+        }
+
+        $checked = true;
+    } catch (PDOException $exception) {
+        error_log('Ensure activity log notification column failed: ' . $exception->getMessage());
+    }
+}
+
+function get_notifications(int $user_id, int $limit = 5): array
+{
+    if ($user_id <= 0) {
+        return [];
+    }
+
+    ensure_activity_logs_is_read_column();
+
+    $limit = max(1, min($limit, 20));
+    $role = (string) ($_SESSION['user_role'] ?? '');
+
+    try {
+        $pdo = Database::getInstance()->getConnection();
+
+        if ($role === 'company') {
+            $stmt = $pdo->prepare(
+                'SELECT DISTINCT activity_logs.id,
+                        activity_logs.action,
+                        activity_logs.description,
+                        activity_logs.created_at,
+                        activity_logs.is_read,
+                        users.name AS actor_name
+                 FROM activity_logs
+                 INNER JOIN users ON users.id = activity_logs.user_id
+                 INNER JOIN company_profiles ON company_profiles.user_id = :user_id
+                 INNER JOIN job_listings ON job_listings.company_id = company_profiles.id
+                 WHERE activity_logs.is_read = 0
+                   AND activity_logs.action IN (\'application_created\', \'application_cancelled\')
+                   AND activity_logs.description LIKE CONCAT(\'%\', job_listings.title, \'%\')
+                 ORDER BY activity_logs.created_at DESC
+                 LIMIT ' . $limit
+            );
+            $stmt->execute([':user_id' => $user_id]);
+
+            return $stmt->fetchAll();
+        }
+
+        if ($role === 'student') {
+            $stmt = $pdo->prepare(
+                'SELECT DISTINCT activity_logs.id,
+                        activity_logs.action,
+                        activity_logs.description,
+                        activity_logs.created_at,
+                        activity_logs.is_read,
+                        users.name AS actor_name
+                 FROM activity_logs
+                 INNER JOIN users ON users.id = activity_logs.user_id
+                 INNER JOIN student_profiles ON student_profiles.user_id = :user_id
+                 WHERE activity_logs.is_read = 0
+                   AND activity_logs.action = \'update_application_status\'
+                   AND activity_logs.description LIKE CONCAT(\'%\', student_profiles.full_name, \'%\')
+                 ORDER BY activity_logs.created_at DESC
+                 LIMIT ' . $limit
+            );
+            $stmt->execute([':user_id' => $user_id]);
+
+            return $stmt->fetchAll();
+        }
+    } catch (PDOException $exception) {
+        error_log('Load notifications failed: ' . $exception->getMessage());
+    }
+
+    return [];
+}
+
 function log_activity(?int $user_id, string $action, string $description = ''): void
 {
     try {
