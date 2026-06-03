@@ -19,10 +19,14 @@ if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
 }
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$validator = (new Validator($_POST))
+    ->required('job_id', 'Lowongan')
+    ->numeric('job_id', 'Lowongan');
+$validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 $jobId = (int) ($_POST['job_id'] ?? 0);
 
-if ($jobId <= 0) {
-    set_flash('error', 'Lowongan tidak valid');
+if ($validationErrors !== [] || $jobId <= 0) {
+    set_flash('error', $validationErrors[0] ?? 'Lowongan tidak valid');
     redirect(BASE_URL . '/company/jobs/index.php');
 }
 

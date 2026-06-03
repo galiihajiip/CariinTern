@@ -161,7 +161,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'pe
     $programId = (int) ($_POST['program_id'] ?? 0);
     $semester = (int) ($_POST['semester'] ?? 0);
     $gpa = (float) ($_POST['gpa'] ?? -1);
-    $errors = [];
+    $validationData = $_POST;
+    $validationData['student_id'] = $nim;
+    $validator = (new Validator($validationData))
+        ->required('form_type', 'Form')
+        ->in_array('form_type', ['personal'], 'Form')
+        ->required('full_name', 'Nama lengkap')
+        ->min_length('full_name', 3, 'Nama lengkap')
+        ->max_length('full_name', 100, 'Nama lengkap')
+        ->required('student_id', 'NIM')
+        ->max_length('student_id', 30, 'NIM')
+        ->unique('student_id', 'student_profiles', 'student_id', (int) ($studentProfile['id'] ?? 0))
+        ->required('phone', 'No. HP')
+        ->max_length('phone', 20, 'No. HP')
+        ->required('address', 'Alamat')
+        ->required('program_id', 'Program studi')
+        ->numeric('program_id', 'Program studi')
+        ->required('semester', 'Semester')
+        ->numeric('semester', 'Semester')
+        ->between('semester', 1, 14, 'Semester')
+        ->required('gpa', 'IPK')
+        ->numeric('gpa', 'IPK')
+        ->between('gpa', 0, 4, 'IPK');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'full_name' => sanitize($fullName),
@@ -177,46 +199,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'pe
         'transcript_file' => $old['transcript_file'],
     ];
 
-    if ($fullName === '' || strlen($fullName) < 3) {
-        $errors[] = 'Nama lengkap wajib diisi minimal 3 karakter';
-    }
-
-    if ($nim === '') {
-        $errors[] = 'NIM wajib diisi';
-    }
-
-    if ($phone === '') {
-        $errors[] = 'No. HP wajib diisi';
-    }
-
-    if ($address === '') {
-        $errors[] = 'Alamat wajib diisi';
-    }
-
-    if ($semester < 1 || $semester > 14) {
-        $errors[] = 'Semester harus antara 1 sampai 14';
-    }
-
-    if ($gpa < 0 || $gpa > 4) {
-        $errors[] = 'IPK harus antara 0.00 sampai 4.00';
-    }
-
     try {
         $programCheckStmt = $pdo->prepare('SELECT COUNT(*) FROM study_programs WHERE id = :id AND is_active = 1');
         $programCheckStmt->execute([':id' => $programId]);
 
         if ((int) $programCheckStmt->fetchColumn() === 0) {
             $errors[] = 'Program studi tidak valid';
-        }
-
-        $nimCheckStmt = $pdo->prepare('SELECT COUNT(*) FROM student_profiles WHERE student_id = :student_id AND user_id <> :user_id');
-        $nimCheckStmt->execute([
-            ':student_id' => $nim,
-            ':user_id' => $userId,
-        ]);
-
-        if ((int) $nimCheckStmt->fetchColumn() > 0) {
-            $errors[] = 'NIM sudah digunakan mahasiswa lain';
         }
 
         if ($errors === []) {
@@ -295,7 +283,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'do
 
     $activeTab = 'documents';
     $documentAction = trim((string) ($_POST['document_action'] ?? 'upload'));
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('form_type', 'Form')
+        ->in_array('form_type', ['documents'], 'Form')
+        ->required('document_action', 'Aksi dokumen')
+        ->in_array('document_action', ['upload', 'delete_cv', 'delete_transcript'], 'Aksi dokumen');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $hasCvUpload = isset($_FILES['cv_file']) && ($_FILES['cv_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
     $hasTranscriptUpload = isset($_FILES['transcript_file']) && ($_FILES['transcript_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
     $oldCvFile = (string) ($studentProfile['cv_file'] ?? '');

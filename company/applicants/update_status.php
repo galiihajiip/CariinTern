@@ -67,21 +67,21 @@ if (($_SESSION['user_role'] ?? '') !== 'company') {
 
 $allowedStatuses = ['review', 'accepted', 'rejected'];
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$validator = (new Validator($_POST))
+    ->required('application_id', 'Lamaran')
+    ->numeric('application_id', 'Lamaran')
+    ->required('new_status', 'Status')
+    ->in_array('new_status', $allowedStatuses, 'Status')
+    ->max_length('notes', 1000, 'Catatan');
+$validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 $applicationId = (int) ($_POST['application_id'] ?? 0);
 $newStatus = trim((string) ($_POST['new_status'] ?? ''));
 $notes = trim((string) ($_POST['notes'] ?? ''));
 
-if ($applicationId <= 0) {
+if ($validationErrors !== [] || $applicationId <= 0) {
     applicant_status_json([
         'success' => false,
-        'message' => 'Lamaran tidak valid',
-    ], 422);
-}
-
-if (!in_array($newStatus, $allowedStatuses, true)) {
-    applicant_status_json([
-        'success' => false,
-        'message' => 'Status tidak valid',
+        'message' => $validationErrors[0] ?? 'Lamaran tidak valid',
     ], 422);
 }
 

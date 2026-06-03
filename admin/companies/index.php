@@ -26,12 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(BASE_URL . '/admin/companies/index.php?status=' . urlencode($activeTab));
     }
 
+    $validator = (new Validator($_POST))
+        ->required('action', 'Aksi')
+        ->in_array('action', ['verify', 'reject'], 'Aksi')
+        ->required('company_id', 'Perusahaan')
+        ->numeric('company_id', 'Perusahaan')
+        ->max_length('reason', 500, 'Catatan penolakan');
+    $validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $action = (string) ($_POST['action'] ?? '');
     $companyId = (int) ($_POST['company_id'] ?? 0);
     $adminId = (int) ($_SESSION['user_id'] ?? 0);
 
-    if ($companyId <= 0 || !in_array($action, ['verify', 'reject'], true)) {
-        set_flash('error', 'Aksi perusahaan tidak valid');
+    if ($validationErrors !== [] || $companyId <= 0 || !in_array($action, ['verify', 'reject'], true)) {
+        set_flash('error', $validationErrors[0] ?? 'Aksi perusahaan tidak valid');
     } else {
         try {
             $pdo = Database::getInstance()->getConnection();

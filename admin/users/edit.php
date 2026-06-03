@@ -140,7 +140,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $passwordConfirmation = (string) ($_POST['password_confirmation'] ?? '');
     $role = trim((string) ($_POST['role'] ?? ''));
     $isActive = isset($_POST['is_active']) ? 1 : 0;
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('name', 'Nama lengkap')
+        ->required('email', 'Email')
+        ->required('role', 'Role')
+        ->min_length('password', 8, 'Password')
+        ->max_length('name', 100, 'Nama lengkap')
+        ->max_length('email', 100, 'Email')
+        ->email('email')
+        ->in_array('role', $allowedRoles, 'Role')
+        ->unique('email', 'users', 'email', $userId);
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'name' => sanitize($name),
@@ -149,77 +159,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'is_active' => (string) $isActive,
     ];
 
-    if ($name === '') {
-        $errors[] = 'Nama lengkap wajib diisi';
-    }
-
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'Format email tidak valid';
-    }
-
-    if ($password !== '' && strlen($password) < 8) {
-        $errors[] = 'Password minimal 8 karakter';
-    }
-
     if ($password !== $passwordConfirmation) {
         $errors[] = 'Konfirmasi password tidak sama';
     }
 
-    if (!in_array($role, $allowedRoles, true)) {
-        $errors[] = 'Role tidak valid';
-    }
-
     if ($errors === []) {
         try {
-            $emailStmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE email = :email AND id <> :id');
-            $emailStmt->execute([
-                ':email' => $email,
-                ':id' => $userId,
-            ]);
+            $pdo->beginTransaction();
 
-            if ((int) $emailStmt->fetchColumn() > 0) {
-                $errors[] = 'Email sudah digunakan';
+            if ($password !== '') {
+                $updateStmt = $pdo->prepare(
+                    'UPDATE users
+                     SET name = :name, email = :email, password = :password, role = :role, is_active = :is_active
+                     WHERE id = :id'
+                );
+                $updateStmt->execute([
+                    ':name' => $name,
+                    ':email' => $email,
+                    ':password' => password_hash($password, PASSWORD_BCRYPT),
+                    ':role' => $role,
+                    ':is_active' => $isActive,
+                    ':id' => $userId,
+                ]);
             } else {
-                $pdo->beginTransaction();
-
-                if ($password !== '') {
-                    $updateStmt = $pdo->prepare(
-                        'UPDATE users
-                         SET name = :name, email = :email, password = :password, role = :role, is_active = :is_active
-                         WHERE id = :id'
-                    );
-                    $updateStmt->execute([
-                        ':name' => $name,
-                        ':email' => $email,
-                        ':password' => password_hash($password, PASSWORD_BCRYPT),
-                        ':role' => $role,
-                        ':is_active' => $isActive,
-                        ':id' => $userId,
-                    ]);
-                } else {
-                    $updateStmt = $pdo->prepare(
-                        'UPDATE users
-                         SET name = :name, email = :email, role = :role, is_active = :is_active
-                         WHERE id = :id'
-                    );
-                    $updateStmt->execute([
-                        ':name' => $name,
-                        ':email' => $email,
-                        ':role' => $role,
-                        ':is_active' => $isActive,
-                        ':id' => $userId,
-                    ]);
-                }
-
-                if (!admin_edit_sync_profile($pdo, $userId, $role, $name)) {
-                    throw new RuntimeException('User profile could not be synchronized');
-                }
-
-                $pdo->commit();
-                log_activity((int) ($_SESSION['user_id'] ?? 0), 'update_user', 'Admin mengubah user ID ' . $userId);
-                set_flash('success', 'User berhasil diperbarui');
-                redirect(BASE_URL . '/admin/users/index.php');
+                $updateStmt = $pdo->prepare(
+                    'UPDATE users
+                     SET name = :name, email = :email, role = :role, is_active = :is_active
+                     WHERE id = :id'
+                );
+                $updateStmt->execute([
+                    ':name' => $name,
+                    ':email' => $email,
+                    ':role' => $role,
+                    ':is_active' => $isActive,
+                    ':id' => $userId,
+                ]);
             }
+
+            if (!admin_edit_sync_profile($pdo, $userId, $role, $name)) {
+                throw new RuntimeException('User profile could not be synchronized');
+            }
+
+            $pdo->commit();
+            log_activity((int) ($_SESSION['user_id'] ?? 0), 'update_user', 'Admin mengubah user ID ' . $userId);
+            set_flash('success', 'User berhasil diperbarui');
+            redirect(BASE_URL . '/admin/users/index.php');
         } catch (Throwable $exception) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();

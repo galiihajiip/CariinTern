@@ -56,7 +56,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description = trim((string) ($_POST['description'] ?? ''));
     $isActive = isset($_POST['is_active']) ? 1 : 0;
     $slug = generate_slug($slugInput !== '' ? $slugInput : $name);
-    $errors = [];
+    $validationData = $_POST;
+    $validationData['slug'] = $slug;
+    $validator = (new Validator($validationData))
+        ->required('name', 'Nama kategori')
+        ->required('slug', 'Slug kategori')
+        ->max_length('name', 100, 'Nama kategori')
+        ->max_length('slug', 100, 'Slug kategori')
+        ->unique('slug', 'internship_categories', 'slug', $categoryId);
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'name' => sanitize($name),
@@ -65,42 +73,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'is_active' => (string) $isActive,
     ];
 
-    if ($name === '') {
-        $errors[] = 'Nama kategori wajib diisi';
-    }
-
-    if ($slug === '') {
-        $errors[] = 'Slug kategori wajib diisi';
-    }
-
     if ($errors === []) {
         try {
-            $stmt = $pdo->prepare('SELECT COUNT(*) FROM internship_categories WHERE slug = :slug AND id <> :id');
-            $stmt->execute([
+            $updateStmt = $pdo->prepare(
+                'UPDATE internship_categories
+                 SET name = :name, slug = :slug, description = :description, is_active = :is_active
+                 WHERE id = :id'
+            );
+            $updateStmt->execute([
+                ':name' => $name,
                 ':slug' => $slug,
+                ':description' => $description !== '' ? $description : null,
+                ':is_active' => $isActive,
                 ':id' => $categoryId,
             ]);
 
-            if ((int) $stmt->fetchColumn() > 0) {
-                $errors[] = 'Slug sudah digunakan';
-            } else {
-                $updateStmt = $pdo->prepare(
-                    'UPDATE internship_categories
-                     SET name = :name, slug = :slug, description = :description, is_active = :is_active
-                     WHERE id = :id'
-                );
-                $updateStmt->execute([
-                    ':name' => $name,
-                    ':slug' => $slug,
-                    ':description' => $description !== '' ? $description : null,
-                    ':is_active' => $isActive,
-                    ':id' => $categoryId,
-                ]);
-
-                log_activity((int) ($_SESSION['user_id'] ?? 0), 'update_category', 'Admin mengubah kategori ID ' . $categoryId);
-                set_flash('success', 'Kategori berhasil diperbarui');
-                redirect(BASE_URL . '/admin/categories/index.php');
-            }
+            log_activity((int) ($_SESSION['user_id'] ?? 0), 'update_category', 'Admin mengubah kategori ID ' . $categoryId);
+            set_flash('success', 'Kategori berhasil diperbarui');
+            redirect(BASE_URL . '/admin/categories/index.php');
         } catch (PDOException $exception) {
             error_log('Update category failed: ' . $exception->getMessage());
             $errors[] = 'Kategori gagal diperbarui. Silakan coba lagi nanti';

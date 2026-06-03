@@ -17,10 +17,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'toggl
         redirect(BASE_URL . '/admin/programs/index.php');
     }
 
+    $validator = (new Validator($_POST))
+        ->required('action', 'Aksi')
+        ->in_array('action', ['toggle_status'], 'Aksi')
+        ->required('program_id', 'Program studi')
+        ->numeric('program_id', 'Program studi');
+    $validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $programId = (int) ($_POST['program_id'] ?? 0);
 
-    if ($programId <= 0) {
-        set_flash('error', 'Program studi tidak valid');
+    if ($validationErrors !== [] || $programId <= 0) {
+        set_flash('error', $validationErrors[0] ?? 'Program studi tidak valid');
     } else {
         try {
             $pdo = Database::getInstance()->getConnection();

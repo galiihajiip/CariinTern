@@ -37,6 +37,194 @@ function csrf_field(): string
     return '<input type="hidden" name="csrf_token" value="' . sanitize(generate_csrf_token()) . '">';
 }
 
+class Validator
+{
+    private array $errors = [];
+    private array $data = [];
+
+    public function __construct(array $data)
+    {
+        $this->data = $data;
+    }
+
+    public function required(string $field, string $label): self
+    {
+        $value = $this->value($field);
+
+        if ($value === null || trim((string) $value) === '') {
+            $this->addError($field, $label . ' wajib diisi');
+        }
+
+        return $this;
+    }
+
+    public function min_length(string $field, int $min, string $label): self
+    {
+        $value = trim((string) $this->value($field, ''));
+
+        if ($value !== '' && strlen($value) < $min) {
+            $this->addError($field, $label . ' minimal ' . $min . ' karakter');
+        }
+
+        return $this;
+    }
+
+    public function max_length(string $field, int $max, string $label): self
+    {
+        $value = trim((string) $this->value($field, ''));
+
+        if ($value !== '' && strlen($value) > $max) {
+            $this->addError($field, $label . ' maksimal ' . $max . ' karakter');
+        }
+
+        return $this;
+    }
+
+    public function email(string $field): self
+    {
+        $value = trim((string) $this->value($field, ''));
+
+        if ($value !== '' && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+            $this->addError($field, 'Format email tidak valid');
+        }
+
+        return $this;
+    }
+
+    public function numeric(string $field, string $label): self
+    {
+        $value = $this->value($field);
+
+        if ($value !== null && trim((string) $value) !== '' && !is_numeric($value)) {
+            $this->addError($field, $label . ' harus berupa angka');
+        }
+
+        return $this;
+    }
+
+    public function between(string $field, float $min, float $max, string $label): self
+    {
+        $value = $this->value($field);
+
+        if ($value !== null && trim((string) $value) !== '') {
+            if (!is_numeric($value) || (float) $value < $min || (float) $value > $max) {
+                $this->addError($field, $label . ' harus antara ' . $min . ' sampai ' . $max);
+            }
+        }
+
+        return $this;
+    }
+
+    public function date(string $field, string $label): self
+    {
+        $value = trim((string) $this->value($field, ''));
+
+        if ($value !== '') {
+            $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+
+            if (!$date || $date->format('Y-m-d') !== $value) {
+                $this->addError($field, $label . ' harus berupa tanggal valid');
+            }
+        }
+
+        return $this;
+    }
+
+    public function date_after(string $field, string $after_field, string $label): self
+    {
+        $value = trim((string) $this->value($field, ''));
+        $afterValue = trim((string) $this->value($after_field, ''));
+
+        if ($value !== '' && $afterValue !== '') {
+            $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+            $afterDate = DateTimeImmutable::createFromFormat('Y-m-d', $afterValue);
+
+            if ($date && $afterDate && $date->format('Y-m-d') === $value && $afterDate->format('Y-m-d') === $afterValue && $date <= $afterDate) {
+                $this->addError($field, $label . ' harus setelah ' . $after_field);
+            }
+        }
+
+        return $this;
+    }
+
+    public function in_array(string $field, array $allowed, string $label): self
+    {
+        $value = $this->value($field);
+
+        if ($value !== null && trim((string) $value) !== '' && !in_array((string) $value, array_map('strval', $allowed), true)) {
+            $this->addError($field, $label . ' tidak valid');
+        }
+
+        return $this;
+    }
+
+    public function unique(string $field, string $table, string $column, int $except_id = 0): self
+    {
+        $value = trim((string) $this->value($field, ''));
+
+        if ($value === '') {
+            return $this;
+        }
+
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $table) || !preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
+            $this->addError($field, 'Validasi unique tidak valid');
+            return $this;
+        }
+
+        try {
+            $pdo = Database::getInstance()->getConnection();
+            $sql = 'SELECT COUNT(*) FROM ' . $table . ' WHERE ' . $column . ' = :value';
+            $params = [':value' => $value];
+
+            if ($except_id > 0) {
+                $sql .= ' AND id <> :except_id';
+                $params[':except_id'] = $except_id;
+            }
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+
+            if ((int) $stmt->fetchColumn() > 0) {
+                $this->addError($field, ucfirst(str_replace('_', ' ', $field)) . ' sudah digunakan');
+            }
+        } catch (PDOException $exception) {
+            error_log('Unique validation failed: ' . $exception->getMessage());
+            $this->addError($field, 'Validasi data gagal');
+        }
+
+        return $this;
+    }
+
+    public function fails(): bool
+    {
+        return $this->errors !== [];
+    }
+
+    public function errors(): array
+    {
+        return $this->errors;
+    }
+
+    public function first(string $field): ?string
+    {
+        return $this->errors[$field][0] ?? null;
+    }
+
+    private function value(string $field, $default = null)
+    {
+        return $this->data[$field] ?? $default;
+    }
+
+    private function addError(string $field, string $message): void
+    {
+        if (!isset($this->errors[$field])) {
+            $this->errors[$field] = [];
+        }
+
+        $this->errors[$field][] = $message;
+    }
+}
+
 function redirect(string $url): void
 {
     header('Location: ' . $url);

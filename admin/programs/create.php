@@ -27,7 +27,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
     $faculty = trim((string) ($_POST['faculty'] ?? ''));
     $isActive = isset($_POST['is_active']) ? 1 : 0;
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('name', 'Nama program studi')
+        ->required('code', 'Kode program studi')
+        ->max_length('name', 100, 'Nama program studi')
+        ->max_length('code', 20, 'Kode program studi')
+        ->in_array('faculty', $faculties, 'Fakultas')
+        ->unique('code', 'study_programs', 'code');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'name' => sanitize($name),
@@ -36,46 +43,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'is_active' => (string) $isActive,
     ];
 
-    if ($name === '') {
-        $errors[] = 'Nama program studi wajib diisi';
-    }
-
-    if ($code === '') {
-        $errors[] = 'Kode program studi wajib diisi';
-    }
-
     if (!preg_match('/^[A-Z0-9_-]{2,20}$/', $code)) {
         $errors[] = 'Kode hanya boleh huruf besar, angka, underscore, atau dash dengan panjang 2-20 karakter';
-    }
-
-    if (!in_array($faculty, $faculties, true)) {
-        $errors[] = 'Fakultas tidak valid';
     }
 
     if ($errors === []) {
         try {
             $pdo = Database::getInstance()->getConnection();
-            $stmt = $pdo->prepare('SELECT COUNT(*) FROM study_programs WHERE code = :code');
-            $stmt->execute([':code' => $code]);
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO study_programs (name, code, faculty, is_active)
+                 VALUES (:name, :code, :faculty, :is_active)'
+            );
+            $insertStmt->execute([
+                ':name' => $name,
+                ':code' => $code,
+                ':faculty' => $faculty,
+                ':is_active' => $isActive,
+            ]);
 
-            if ((int) $stmt->fetchColumn() > 0) {
-                $errors[] = 'Kode program studi sudah digunakan';
-            } else {
-                $insertStmt = $pdo->prepare(
-                    'INSERT INTO study_programs (name, code, faculty, is_active)
-                     VALUES (:name, :code, :faculty, :is_active)'
-                );
-                $insertStmt->execute([
-                    ':name' => $name,
-                    ':code' => $code,
-                    ':faculty' => $faculty,
-                    ':is_active' => $isActive,
-                ]);
-
-                log_activity((int) ($_SESSION['user_id'] ?? 0), 'create_program', 'Admin menambahkan program studi: ' . $name);
-                set_flash('success', 'Program studi berhasil ditambahkan');
-                redirect(BASE_URL . '/admin/programs/index.php');
-            }
+            log_activity((int) ($_SESSION['user_id'] ?? 0), 'create_program', 'Admin menambahkan program studi: ' . $name);
+            set_flash('success', 'Program studi berhasil ditambahkan');
+            redirect(BASE_URL . '/admin/programs/index.php');
         } catch (PDOException $exception) {
             error_log('Create study program failed: ' . $exception->getMessage());
             $errors[] = 'Program studi gagal ditambahkan. Silakan coba lagi nanti';

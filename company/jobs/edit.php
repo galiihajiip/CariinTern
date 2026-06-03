@@ -120,7 +120,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $endDateInput = trim((string) ($_POST['end_date'] ?? ''));
     $deadlineInput = trim((string) ($_POST['deadline'] ?? ''));
     $status = trim((string) ($_POST['status'] ?? 'draft'));
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('title', 'Judul lowongan')
+        ->required('description', 'Deskripsi lowongan')
+        ->required('requirements', 'Persyaratan')
+        ->required('category_id', 'Kategori')
+        ->required('location', 'Lokasi')
+        ->required('quota', 'Kuota')
+        ->required('start_date', 'Tanggal mulai')
+        ->required('end_date', 'Tanggal selesai')
+        ->required('deadline', 'Deadline')
+        ->min_length('title', 10, 'Judul lowongan')
+        ->min_length('description', 50, 'Deskripsi lowongan')
+        ->max_length('title', 150, 'Judul lowongan')
+        ->max_length('location', 100, 'Lokasi')
+        ->numeric('quota', 'Kuota')
+        ->between('quota', 1, 100, 'Kuota')
+        ->date('start_date', 'Tanggal mulai')
+        ->date('end_date', 'Tanggal selesai')
+        ->date('deadline', 'Deadline')
+        ->date_after('end_date', 'start_date', 'Tanggal selesai')
+        ->in_array('status', ['open', 'draft', 'closed'], 'Status lowongan');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'title' => sanitize($title),
@@ -134,26 +155,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'deadline' => sanitize($deadlineInput),
         'status' => sanitize($status),
     ];
-
-    if ($title === '') {
-        $errors[] = 'Judul lowongan wajib diisi';
-    } elseif (strlen($title) < 10) {
-        $errors[] = 'Judul lowongan minimal 10 karakter';
-    }
-
-    if ($description === '') {
-        $errors[] = 'Deskripsi lowongan wajib diisi';
-    } elseif (strlen($description) < 50) {
-        $errors[] = 'Deskripsi lowongan minimal 50 karakter';
-    }
-
-    if ($requirements === '') {
-        $errors[] = 'Persyaratan wajib diisi';
-    }
-
-    if ($location === '') {
-        $errors[] = 'Lokasi wajib diisi';
-    }
 
     if ($categoryId <= 0) {
         $errors[] = 'Kategori wajib dipilih';
@@ -169,37 +170,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($quota <= 0) {
-        $errors[] = 'Kuota wajib berupa angka positif';
-    } elseif ($quota > 100) {
-        $errors[] = 'Kuota maksimal 100';
-    }
-
     $startDate = company_job_edit_date($startDateInput);
     $endDate = company_job_edit_date($endDateInput);
     $deadline = company_job_edit_date($deadlineInput);
     $todayDate = new DateTimeImmutable('today');
 
-    if (!$startDate) {
-        $errors[] = 'Tanggal mulai wajib diisi dengan format valid';
-    } elseif ($startDate < $todayDate) {
+    if ($startDate && $startDate < $todayDate) {
         $errors[] = 'Tanggal mulai tidak boleh di masa lalu';
     }
 
-    if (!$endDate) {
-        $errors[] = 'Tanggal selesai wajib diisi dengan format valid';
-    } elseif ($startDate && $endDate <= $startDate) {
-        $errors[] = 'Tanggal selesai harus setelah tanggal mulai';
-    }
-
-    if (!$deadline) {
-        $errors[] = 'Deadline wajib diisi dengan format valid';
-    } elseif ($endDate && $deadline >= $endDate) {
+    if ($endDate && $deadline && $deadline >= $endDate) {
         $errors[] = 'Deadline harus sebelum tanggal selesai';
-    }
-
-    if (!in_array($status, ['open', 'draft', 'closed'], true)) {
-        $errors[] = 'Status lowongan tidak valid';
     }
 
     if ((string) $job['status'] === 'closed' && $status === 'open' && $deadline && $deadline < $todayDate) {

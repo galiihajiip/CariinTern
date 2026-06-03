@@ -133,9 +133,11 @@ try {
         }
 
         $coverLetter = trim((string) ($_POST['cover_letter'] ?? ''));
-
-        if ($coverLetter !== '' && strlen($coverLetter) < 50) {
-            $errors[] = 'Cover letter minimal 50 karakter jika diisi';
+        $validator = (new Validator($_POST))
+            ->min_length('cover_letter', 50, 'Cover letter')
+            ->max_length('cover_letter', 2000, 'Cover letter');
+        if ($validator->fails()) {
+            $errors = array_merge($errors, ...array_values($validator->errors()));
         }
 
         if ($remainingQuota <= 0) {

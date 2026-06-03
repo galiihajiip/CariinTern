@@ -107,13 +107,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(company_jobs_redirect_url($selectedStatus, $currentPage));
     }
 
+    $validator = (new Validator($_POST))
+        ->required('action', 'Aksi')
+        ->in_array('action', ['toggle_status'], 'Aksi')
+        ->required('job_id', 'Lowongan')
+        ->numeric('job_id', 'Lowongan');
+    $validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $action = (string) ($_POST['action'] ?? '');
     $jobId = (int) ($_POST['job_id'] ?? 0);
 
     if ($companyId <= 0) {
         set_flash('error', 'Lengkapi profil perusahaan terlebih dahulu');
-    } elseif ($jobId <= 0) {
-        set_flash('error', 'Lowongan tidak valid');
+    } elseif ($validationErrors !== [] || $jobId <= 0) {
+        set_flash('error', $validationErrors[0] ?? 'Lowongan tidak valid');
     } elseif ($action === 'toggle_status') {
         try {
             $stmt = $pdo->prepare(

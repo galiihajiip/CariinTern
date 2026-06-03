@@ -86,7 +86,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $passwordConfirmation = (string) ($_POST['password_confirmation'] ?? '');
     $role = trim((string) ($_POST['role'] ?? ''));
     $isActive = isset($_POST['is_active']) ? 1 : 0;
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('name', 'Nama lengkap')
+        ->required('email', 'Email')
+        ->required('password', 'Password')
+        ->required('role', 'Role')
+        ->min_length('password', 8, 'Password')
+        ->max_length('name', 100, 'Nama lengkap')
+        ->max_length('email', 100, 'Email')
+        ->email('email')
+        ->in_array('role', $allowedRoles, 'Role')
+        ->unique('email', 'users', 'email');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 
     $old = [
         'name' => sanitize($name),
@@ -95,60 +106,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'is_active' => (string) $isActive,
     ];
 
-    if ($name === '') {
-        $errors[] = 'Nama lengkap wajib diisi';
-    }
-
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = 'Format email tidak valid';
-    }
-
-    if (strlen($password) < 8) {
-        $errors[] = 'Password minimal 8 karakter';
-    }
-
     if ($password !== $passwordConfirmation) {
         $errors[] = 'Konfirmasi password tidak sama';
-    }
-
-    if (!in_array($role, $allowedRoles, true)) {
-        $errors[] = 'Role tidak valid';
     }
 
     if ($errors === []) {
         try {
             $pdo = Database::getInstance()->getConnection();
-            $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE email = :email');
-            $stmt->execute([':email' => $email]);
+            $pdo->beginTransaction();
 
-            if ((int) $stmt->fetchColumn() > 0) {
-                $errors[] = 'Email sudah digunakan';
-            } else {
-                $pdo->beginTransaction();
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO users (name, email, password, role, is_active)
+                 VALUES (:name, :email, :password, :role, :is_active)'
+            );
+            $insertStmt->execute([
+                ':name' => $name,
+                ':email' => $email,
+                ':password' => password_hash($password, PASSWORD_BCRYPT),
+                ':role' => $role,
+                ':is_active' => $isActive,
+            ]);
 
-                $insertStmt = $pdo->prepare(
-                    'INSERT INTO users (name, email, password, role, is_active)
-                     VALUES (:name, :email, :password, :role, :is_active)'
-                );
-                $insertStmt->execute([
-                    ':name' => $name,
-                    ':email' => $email,
-                    ':password' => password_hash($password, PASSWORD_BCRYPT),
-                    ':role' => $role,
-                    ':is_active' => $isActive,
-                ]);
+            $userId = (int) $pdo->lastInsertId();
 
-                $userId = (int) $pdo->lastInsertId();
-
-                if (!admin_create_profile($pdo, $userId, $role, $name)) {
-                    throw new RuntimeException('Initial profile could not be created');
-                }
-
-                $pdo->commit();
-                log_activity((int) ($_SESSION['user_id'] ?? 0), 'create_user', 'Admin menambahkan user ID ' . $userId);
-                set_flash('success', 'User berhasil ditambahkan');
-                redirect(BASE_URL . '/admin/users/index.php');
+            if (!admin_create_profile($pdo, $userId, $role, $name)) {
+                throw new RuntimeException('Initial profile could not be created');
             }
+
+            $pdo->commit();
+            log_activity((int) ($_SESSION['user_id'] ?? 0), 'create_user', 'Admin menambahkan user ID ' . $userId);
+            set_flash('success', 'User berhasil ditambahkan');
+            redirect(BASE_URL . '/admin/users/index.php');
         } catch (Throwable $exception) {
             if (isset($pdo) && $pdo->inTransaction()) {
                 $pdo->rollBack();

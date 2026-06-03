@@ -18,10 +18,14 @@ if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
     redirect(BASE_URL . '/admin/categories/index.php');
 }
 
+$validator = (new Validator($_POST))
+    ->required('category_id', 'Kategori')
+    ->numeric('category_id', 'Kategori');
+$validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 $categoryId = (int) ($_POST['category_id'] ?? 0);
 
-if ($categoryId <= 0) {
-    set_flash('error', 'Kategori tidak valid');
+if ($validationErrors !== [] || $categoryId <= 0) {
+    set_flash('error', $validationErrors[0] ?? 'Kategori tidak valid');
     redirect(BASE_URL . '/admin/categories/index.php');
 }
 

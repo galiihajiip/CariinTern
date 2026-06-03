@@ -29,11 +29,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
         redirect(BASE_URL . '/admin/users/index.php');
     }
 
+    $validator = (new Validator($_POST))
+        ->required('action', 'Aksi')
+        ->in_array('action', ['delete'], 'Aksi')
+        ->required('user_id', 'User')
+        ->numeric('user_id', 'User');
+    $validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $userId = (int) ($_POST['user_id'] ?? 0);
     $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 
-    if ($userId <= 0) {
-        set_flash('error', 'User tidak valid');
+    if ($validationErrors !== [] || $userId <= 0) {
+        set_flash('error', $validationErrors[0] ?? 'User tidak valid');
     } elseif ($userId === $currentUserId) {
         set_flash('error', 'Anda tidak boleh menghapus akun sendiri');
     } else {

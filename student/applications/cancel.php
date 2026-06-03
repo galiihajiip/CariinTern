@@ -19,10 +19,14 @@ if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
 }
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+$validator = (new Validator($_POST))
+    ->required('application_id', 'Lamaran')
+    ->numeric('application_id', 'Lamaran');
+$validationErrors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
 $applicationId = (int) ($_POST['application_id'] ?? 0);
 
-if ($applicationId <= 0) {
-    set_flash('error', 'Lamaran tidak valid');
+if ($validationErrors !== [] || $applicationId <= 0) {
+    set_flash('error', $validationErrors[0] ?? 'Lamaran tidak valid');
     redirect(BASE_URL . '/student/applications/index.php');
 }
 

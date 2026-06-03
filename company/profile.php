@@ -96,7 +96,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $address = trim((string) ($_POST['address'] ?? ''));
     $phone = trim((string) ($_POST['phone'] ?? ''));
     $website = trim((string) ($_POST['website'] ?? ''));
-    $errors = [];
+    $validator = (new Validator($_POST))
+        ->required('company_name', 'Nama perusahaan')
+        ->required('industry', 'Industri')
+        ->required('description', 'Deskripsi perusahaan')
+        ->required('address', 'Alamat')
+        ->required('phone', 'No. telepon')
+        ->max_length('company_name', 150, 'Nama perusahaan')
+        ->max_length('industry', 100, 'Industri')
+        ->max_length('phone', 20, 'No. telepon')
+        ->max_length('website', 200, 'Website');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
     $newLogo = $profile['logo'] ?? null;
 
     $old = [
@@ -109,26 +119,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'logo' => sanitize((string) ($profile['logo'] ?? '')),
         'is_verified' => (string) (int) ($profile['is_verified'] ?? 0),
     ];
-
-    if ($companyName === '') {
-        $errors[] = 'Nama perusahaan wajib diisi';
-    }
-
-    if ($industry === '') {
-        $errors[] = 'Industri wajib dipilih';
-    }
-
-    if ($description === '') {
-        $errors[] = 'Deskripsi perusahaan wajib diisi';
-    }
-
-    if ($address === '') {
-        $errors[] = 'Alamat wajib diisi';
-    }
-
-    if ($phone === '') {
-        $errors[] = 'No. telepon wajib diisi';
-    }
 
     if ($website !== '' && !filter_var($website, FILTER_VALIDATE_URL)) {
         $errors[] = 'Website harus berupa URL valid';
