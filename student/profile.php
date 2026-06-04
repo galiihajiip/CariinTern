@@ -275,6 +275,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'pe
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'avatar') {
+    if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
+        set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
+        redirect(BASE_URL . '/student/profile.php');
+    }
+
+    $validator = (new Validator($_POST))
+        ->required('form_type', 'Form')
+        ->in_array('form_type', ['avatar'], 'Form');
+    $errors = $validator->fails() ? array_merge(...array_values($validator->errors())) : [];
+    $hasAvatarUpload = isset($_FILES['avatar']) && ($_FILES['avatar']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE;
+    $uploadedAvatar = '';
+    $oldAvatar = (string) ($studentProfile['avatar'] ?? '');
+
+    if (!$studentProfile) {
+        $errors[] = 'Profil mahasiswa belum tersedia';
+    }
+
+    if (!$hasAvatarUpload) {
+        $errors[] = 'Pilih foto profil terlebih dahulu';
+    }
+
+    if ($errors === [] && (int) ($_FILES['avatar']['size'] ?? 0) > 2 * 1024 * 1024) {
+        $errors[] = 'Ukuran foto profil tidak boleh lebih dari 2MB';
+    }
+
+    if ($errors === []) {
+        $studentNim = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) ($studentProfile['student_id'] ?? 'student_' . $userId));
+        $upload = upload_file($_FILES['avatar'], 'profile_photos', 'avatar_' . ($studentNim !== '' ? $studentNim : $userId));
+
+        if (!$upload['success']) {
+            $errors[] = $upload['message'];
+        } else {
+            $uploadedAvatar = $upload['filename'];
+        }
+    }
+
+    if ($errors === []) {
+        try {
+            $avatarPath = 'profile_photos/' . $uploadedAvatar;
+            $stmt = $pdo->prepare('UPDATE users SET avatar = :avatar WHERE id = :id');
+            $stmt->execute([
+                ':avatar' => $avatarPath,
+                ':id' => $userId,
+            ]);
+
+            if ($oldAvatar !== '' && str_starts_with($oldAvatar, 'profile_photos/')) {
+                delete_file(basename($oldAvatar), 'profile_photos');
+            }
+
+            log_activity($userId, 'update_student_avatar', 'Mahasiswa memperbarui foto profil');
+            set_flash('success', 'Foto profil berhasil diperbarui');
+            redirect(BASE_URL . '/student/profile.php');
+        } catch (PDOException $exception) {
+            if ($uploadedAvatar !== '') {
+                delete_file($uploadedAvatar, 'profile_photos');
+            }
+
+            error_log('Update student avatar failed: ' . $exception->getMessage());
+            $errors[] = 'Foto profil gagal diperbarui. Silakan coba lagi nanti';
+        }
+    }
+
+    foreach ($errors as $error) {
+        set_flash('error', $error);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form_type'] ?? '') === 'documents') {
     if (!verify_csrf_token((string) ($_POST['csrf_token'] ?? ''))) {
         set_flash('error', 'Permintaan tidak valid. Silakan coba lagi.');
@@ -711,20 +779,44 @@ require_once __DIR__ . '/../layouts/sidebar_student.php';
 
 <div class="modal fade" id="avatarModal" tabindex="-1" aria-labelledby="avatarModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
+        <form class="modal-content needs-validation" method="POST" action="profile.php" enctype="multipart/form-data" novalidate>
+            <?= csrf_field(); ?>
+            <input type="hidden" name="form_type" value="avatar">
             <div class="modal-header">
                 <h5 class="modal-title" id="avatarModalLabel">Ganti Foto Profil</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
             </div>
             <div class="modal-body">
-                <div class="alert alert-info mb-0">
-                    Fitur upload foto profil akan diaktifkan pada bagian upload berikutnya.
+                <div class="text-center mb-3">
+                    <img
+                        src="<?= sanitize($avatarUrl); ?>"
+                        alt="Preview foto profil saat ini"
+                        class="rounded-circle border object-fit-cover"
+                        style="width: 120px; height: 120px;"
+                    >
                 </div>
+                <label for="avatar" class="form-label">Pilih foto baru</label>
+                <input
+                    type="file"
+                    class="form-control"
+                    id="avatar"
+                    name="avatar"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                >
+                <div class="form-text">
+                    Format JPG, PNG, atau WebP. Ukuran maksimal 2MB.
+                </div>
+                <div class="invalid-feedback">Pilih foto profil terlebih dahulu.</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Tutup</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload me-1"></i>
+                    Upload Foto
+                </button>
             </div>
-        </div>
+        </form>
     </div>
 </div>
 
