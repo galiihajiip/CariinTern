@@ -1,0 +1,39 @@
+{
+  "name": "CariinTern",
+  "short_name": "CariinTern",
+  "description": "Platform pendaftaran dan pencarian magang mahasiswa",
+  "start_url": "/internship-system/index.php",
+  "scope": "/internship-system/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#6366f1",
+  "lang": "id-ID",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "assets/icons/icon-72x72.png", "sizes": "72x72", "type": "image/png" },
+    { "src": "assets/icons/icon-96x96.png", "sizes": "96x96", "type": "image/png" },
+    { "src": "assets/icons/icon-128x128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "assets/icons/icon-144x144.png", "sizes": "144x144", "type": "image/png" },
+    { "src": "assets/icons/icon-152x152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "assets/icons/icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icons/icon-384x384.png", "sizes": "384x384", "type": "image/png" },
+    { "src": "assets/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    { "src": "assets/screenshots/desktop.png", "sizes": "1280x720", "type": "image/png", "form_factor": "wide" },
+    { "src": "assets/screenshots/mobile.png", "sizes": "390x844", "type": "image/png", "form_factor": "narrow" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Cari Lowongan",
+      "url": "/internship-system/student/jobs/index.php",
+      "icons": [{ "src": "assets/icons/icon-96x96.png", "sizes": "96x96", "type": "image/png" }]
+    },
+    {
+      "name": "Lamaran Saya",
+      "url": "/internship-system/student/applications/index.php",
+      "icons": [{ "src": "assets/icons/icon-96x96.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ]
+}
