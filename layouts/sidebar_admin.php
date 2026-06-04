@@ -44,6 +44,11 @@ $menuItems = [
         'href' => 'admin/jobs/index.php',
     ],
     [
+        'label' => 'Auto Scraper',
+        'icon' => 'bi-robot',
+        'href' => 'admin/scraper/index.php',
+    ],
+    [
         'label' => 'Laporan',
         'icon' => 'bi-bar-chart',
         'href' => 'admin/reports.php',
@@ -51,23 +56,9 @@ $menuItems = [
 ];
 ?>
 
-<button
-    class="btn btn-dark d-md-none position-fixed top-0 start-0 m-3"
-    type="button"
-    data-bs-toggle="collapse"
-    data-bs-target="#adminSidebar"
-    aria-controls="adminSidebar"
-    aria-expanded="false"
-    aria-label="Toggle sidebar"
-    style="z-index: 1050;"
->
-    <i class="bi bi-list fs-4"></i>
-</button>
-
 <aside
     id="adminSidebar"
-    class="sidebar-admin collapse d-md-block bg-dark text-white position-fixed top-0 start-0 vh-100 overflow-auto"
-    style="width: 250px; z-index: 1040;"
+    class="sidebar sidebar-admin bg-dark text-white"
 >
     <div class="d-flex flex-column h-100 p-3">
         <div class="mb-4">
@@ -106,13 +97,4 @@ $menuItems = [
     </div>
 </aside>
 
-<style>
-    @media (max-width: 767.98px) {
-        .admin-content {
-            margin-left: 0 !important;
-            padding-top: 4.5rem !important;
-        }
-    }
-</style>
-
-<div class="content admin-content flex-grow-1 p-4" style="margin-left: 250px;">
+<div class="content admin-content flex-grow-1 p-4">

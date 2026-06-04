@@ -12,16 +12,30 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initSidebarToggle() {
-    const toggleButtons = document.querySelectorAll('[data-sidebar-toggle], .sidebar-toggle, .navbar-toggler');
+    const sidebarToggle = document.getElementById('sidebarToggle');
     const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
 
-    if (!sidebar || toggleButtons.length === 0) {
+    if (!sidebar || !sidebarToggle || !overlay) {
         return;
     }
 
-    toggleButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            sidebar.classList.toggle('show');
+    sidebarToggle.addEventListener('click', () => {
+        sidebar.classList.toggle('sidebar-open');
+        overlay.classList.toggle('show');
+    });
+
+    overlay.addEventListener('click', () => {
+        sidebar.classList.remove('sidebar-open');
+        overlay.classList.remove('show');
+    });
+
+    sidebar.querySelectorAll('.nav-link').forEach((link) => {
+        link.addEventListener('click', () => {
+            if (window.innerWidth < 992) {
+                sidebar.classList.remove('sidebar-open');
+                overlay.classList.remove('show');
+            }
         });
     });
 }

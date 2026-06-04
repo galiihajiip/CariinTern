@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -10,7 +10,7 @@ require_once __DIR__ . '/../includes/functions.php';
 check_session_timeout();
 
 $page_title = $page_title ?? 'Dashboard';
-$full_title = sanitize($page_title . ' — ' . APP_NAME);
+$full_title = sanitize($page_title . ' - ' . APP_NAME);
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 $currentUserRole = (string) ($_SESSION['user_role'] ?? '');
 $notifications = $currentUserId > 0 ? get_notifications($currentUserId, 5) : [];
@@ -21,19 +21,47 @@ $activityLinks = [
     'student' => '/student/applications/index.php',
 ];
 $activityLink = rtrim(BASE_URL, '/') . ($activityLinks[$currentUserRole] ?? '/index.php');
+$vapidPublicKey = defined('VAPID_PUBLIC_KEY') ? VAPID_PUBLIC_KEY : '';
 ?>
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-base-url="<?= rtrim(BASE_URL, '/'); ?>" data-vapid-public-key="<?= sanitize($vapidPublicKey); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $full_title; ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9Oer+R4sF86dIHNDz4JxQmK2h5ZC7pERxKED7ZtGh6y9" crossorigin="anonymous">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="manifest" href="<?= rtrim(BASE_URL, '/'); ?>/manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="<?= sanitize(APP_NAME); ?>">
+    <link rel="apple-touch-icon" href="<?= rtrim(BASE_URL, '/'); ?>/assets/icons/icon-152x152.png">
+    <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+    <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/css/custom.css" rel="stylesheet">
+    <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/css/theme.css" rel="stylesheet">
 </head>
 <body>
+    <?php if ($currentUserId > 0): ?>
+        <div class="mobile-header d-lg-none">
+            <button class="btn btn-link text-white p-0 me-3" id="sidebarToggle" aria-label="Menu" type="button">
+                <i class="bi bi-list fs-4"></i>
+            </button>
+            <span class="text-white fw-semibold"><?= sanitize(APP_NAME); ?></span>
+            <div class="ms-auto d-flex gap-2">
+                <a href="<?= sanitize($activityLink); ?>" class="text-white position-relative" aria-label="Notifikasi">
+                    <i class="bi bi-bell fs-5"></i>
+                    <?php if ($notificationCount > 0): ?>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
+                            <?= $notificationCount; ?>
+                        </span>
+                    <?php endif; ?>
+                </a>
+            </div>
+        </div>
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <?php endif; ?>
+
     <?php if ($currentUserId > 0): ?>
         <nav class="notification-navbar position-fixed top-0 end-0 p-3" style="z-index: 1060;">
             <div class="dropdown">
@@ -90,6 +118,10 @@ $activityLink = rtrim(BASE_URL, '/') . ($activityLinks[$currentUserRole] ?? '/in
                     <a href="<?= sanitize($activityLink); ?>" class="dropdown-item text-center small py-2">
                         Lihat Semua Aktivitas
                     </a>
+                    <button type="button" class="dropdown-item justify-content-center small py-2" onclick="window.subscribePush && window.subscribePush()">
+                        <i class="bi bi-bell-fill me-1"></i>
+                        Aktifkan Notifikasi
+                    </button>
                 </div>
             </div>
         </nav>
