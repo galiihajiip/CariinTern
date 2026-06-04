@@ -1,0 +1,6 @@
+{
+    "license": "proprietary",
+    "require": {
+        "minishlink/web-push": "^10.1"
+    }
+}
