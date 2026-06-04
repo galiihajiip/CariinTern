@@ -23,5 +23,5 @@ define('MAX_FILE_SIZE', 5 * 1024 * 1024);
 define('ALLOWED_DOC_TYPES', ['application/pdf']);
 define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/webp']);
 
-define('APP_NAME', 'SiMagang - Sistem Pendaftaran Magang');
+define('APP_NAME', 'CariinTern');
 define('SESSION_TIMEOUT', 3600);
