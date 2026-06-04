@@ -5,6 +5,10 @@ CREATE DATABASE IF NOT EXISTS internship_db
 USE internship_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS scraper_logs;
+DROP TABLE IF EXISTS scraped_jobs;
+DROP TABLE IF EXISTS scraper_sources;
+DROP TABLE IF EXISTS push_subscriptions;
 DROP TABLE IF EXISTS activity_logs;
 DROP TABLE IF EXISTS applications;
 DROP TABLE IF EXISTS job_listings;
@@ -195,6 +199,107 @@ CREATE TABLE activity_logs (
         ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE push_subscriptions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    endpoint TEXT NOT NULL,
+    endpoint_hash CHAR(64) NOT NULL,
+    p256dh VARCHAR(500) NOT NULL,
+    auth VARCHAR(100) NOT NULL,
+    user_agent VARCHAR(255) NULL DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_push_subscriptions_endpoint (endpoint_hash),
+    KEY idx_push_subscriptions_user_id (user_id),
+    CONSTRAINT fk_push_subscriptions_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE scraper_sources (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    type ENUM('website', 'rss', 'telegram', 'google_cse') NOT NULL,
+    url TEXT NOT NULL,
+    config JSON NULL,
+    css_selectors JSON NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    last_scraped_at TIMESTAMP NULL DEFAULT NULL,
+    scrape_interval_hours INT NOT NULL DEFAULT 6,
+    total_scraped INT NOT NULL DEFAULT 0,
+    created_by INT UNSIGNED NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_scraper_sources_type (type),
+    KEY idx_scraper_sources_is_active (is_active),
+    KEY idx_scraper_sources_created_by (created_by),
+    CONSTRAINT fk_scraper_sources_created_by
+        FOREIGN KEY (created_by) REFERENCES users (id)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE scraped_jobs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    source_id INT UNSIGNED NOT NULL,
+    external_id VARCHAR(255) NULL DEFAULT NULL,
+    title VARCHAR(200) NOT NULL,
+    company_name VARCHAR(150) NULL DEFAULT NULL,
+    location VARCHAR(100) NULL DEFAULT NULL,
+    description TEXT NULL,
+    requirements TEXT NULL,
+    deadline DATE NULL,
+    source_url TEXT NOT NULL,
+    category_id INT UNSIGNED NULL DEFAULT NULL,
+    status ENUM('pending', 'approved', 'rejected', 'duplicate') NOT NULL DEFAULT 'pending',
+    approved_by INT UNSIGNED NULL DEFAULT NULL,
+    approved_at TIMESTAMP NULL DEFAULT NULL,
+    job_listing_id INT UNSIGNED NULL DEFAULT NULL,
+    raw_data JSON NULL,
+    scraped_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_scraped_jobs_external (source_id, external_id),
+    KEY idx_scraped_jobs_source_id (source_id),
+    KEY idx_scraped_jobs_category_id (category_id),
+    KEY idx_scraped_jobs_status (status),
+    KEY idx_scraped_jobs_approved_by (approved_by),
+    KEY idx_scraped_jobs_job_listing_id (job_listing_id),
+    CONSTRAINT fk_scraped_jobs_source
+        FOREIGN KEY (source_id) REFERENCES scraper_sources (id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_scraped_jobs_category
+        FOREIGN KEY (category_id) REFERENCES internship_categories (id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_scraped_jobs_approved_by
+        FOREIGN KEY (approved_by) REFERENCES users (id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+    CONSTRAINT fk_scraped_jobs_job_listing
+        FOREIGN KEY (job_listing_id) REFERENCES job_listings (id)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE scraper_logs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    source_id INT UNSIGNED NOT NULL,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TIMESTAMP NULL DEFAULT NULL,
+    status ENUM('running', 'success', 'failed', 'partial') NOT NULL DEFAULT 'running',
+    items_found INT NOT NULL DEFAULT 0,
+    items_new INT NOT NULL DEFAULT 0,
+    items_duplicate INT NOT NULL DEFAULT 0,
+    error_message TEXT NULL,
+    KEY idx_scraper_logs_source_id (source_id),
+    KEY idx_scraper_logs_status (status),
+    KEY idx_scraper_logs_started_at (started_at),
+    CONSTRAINT fk_scraper_logs_source
+        FOREIGN KEY (source_id) REFERENCES scraper_sources (id)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 INSERT INTO users (name, email, password, role, is_active)
 VALUES
     ('Administrator', 'admin@internship.com', '$2y$10$tZHng9FJhQIM86d3d4SVT.tvgdjJ/uUYsUbgsKWfhQA3ys0g8iNgO', 'admin', 1);
@@ -211,3 +316,42 @@ VALUES
     ('Bisnis', 'bisnis', 'Kategori magang untuk bidang bisnis, administrasi, dan pengembangan usaha.', 1),
     ('Desain', 'desain', 'Kategori magang untuk bidang desain grafis, UI/UX, dan kreatif visual.', 1),
     ('Engineering', 'engineering', 'Kategori magang untuk bidang rekayasa, manufaktur, dan operasional teknis.', 1);
+
+INSERT INTO scraper_sources (name, type, url, config, css_selectors, scrape_interval_hours, created_by)
+VALUES
+    (
+        'Glints Indonesia',
+        'website',
+        'https://glints.com/id/opportunities/jobs/explore?locationName=Indonesia&type=INTERNSHIP',
+        '{"requires_js": false, "max_pages": 3}',
+        '{"job_container": ".JobCardsc__JobcardContainer", "title": ".JobCardsc__StyledTitle", "company": ".CompanyLink", "location": ".LocationContainer", "url": "a"}',
+        12,
+        1
+    ),
+    (
+        'Info Magang RSS',
+        'rss',
+        'https://www.its.ac.id/feed/',
+        '{"keyword_filter": ["magang", "internship", "praktek kerja"]}',
+        NULL,
+        24,
+        1
+    ),
+    (
+        'Google Search - Magang 2024',
+        'google_cse',
+        'https://www.googleapis.com/customsearch/v1',
+        '{"api_key": "GANTI_DENGAN_API_KEY", "cx": "GANTI_DENGAN_CX_ID", "query": "lowongan magang mahasiswa Indonesia 2024", "date_restrict": "d7"}',
+        NULL,
+        24,
+        1
+    ),
+    (
+        'Telegram @infomagangid',
+        'telegram',
+        'https://t.me/s/infomagangid',
+        '{"method": "web_scrape", "keyword_filter": ["magang", "internship", "deadline"]}',
+        NULL,
+        4,
+        1
+    );
