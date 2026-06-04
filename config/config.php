@@ -25,3 +25,7 @@ define('ALLOWED_IMAGE_TYPES', ['image/jpeg', 'image/png', 'image/webp']);
 
 define('APP_NAME', 'CariinTern');
 define('SESSION_TIMEOUT', 3600);
+
+define('VAPID_SUBJECT', 'mailto:admin@internship.com');
+define('VAPID_PUBLIC_KEY', 'BLR9NJM7aT01ohZcb0K1Trna9xSvU2oGg0JTSh-1So4qHi56rO_dH96DVHDjd-yMnl7VjK-8Lz3D1Rrs6GnW6gc');
+define('VAPID_PRIVATE_KEY', 'C927TbVIa9OGUoDwmQ665O-u2KxycM8EZHg8aDqoUVQ');
