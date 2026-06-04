@@ -6,6 +6,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/file_upload.php';
+require_once __DIR__ . '/../../includes/push_notification.php';
 
 require_role('student');
 
@@ -70,7 +71,7 @@ try {
     }
 
     $jobStmt = $pdo->prepare(
-        'SELECT job_listings.*, company_profiles.company_name, company_profiles.industry,
+        'SELECT job_listings.*, company_profiles.user_id AS company_user_id, company_profiles.company_name, company_profiles.industry,
                 company_profiles.description AS company_description, company_profiles.address AS company_address,
                 company_profiles.phone AS company_phone, company_profiles.website, company_profiles.logo,
                 company_profiles.is_verified,
@@ -161,6 +162,17 @@ try {
                 'Mahasiswa mengirim lamaran untuk lowongan: ' . (string) $job['title']
             );
 
+            try {
+                notify_user(
+                    (int) $job['company_user_id'],
+                    'Lamaran Baru Masuk!',
+                    (string) $studentProfile['full_name'] . ' melamar ' . (string) $job['title'],
+                    BASE_URL . '/company/applicants/index.php'
+                );
+            } catch (Throwable $exception) {
+                error_log('Push notification for new application failed: ' . $exception->getMessage());
+            }
+
             set_flash('success', 'Lamaran berhasil dikirim!');
             redirect(BASE_URL . '/student/applications/index.php');
         }
@@ -183,6 +195,19 @@ try {
 $companyLogoUrl = !empty($job['logo']) ? get_file_url((string) $job['logo'], 'company_logos') : 'https://placehold.co/112x112?text=Logo';
 $cvUrl = get_file_url((string) $studentProfile['cv_file'], 'cv');
 $transcriptUrl = get_file_url((string) $studentProfile['transcript_file'], 'transcripts');
+$categoryImages = [
+    'teknologi' => 'photo-1518770660439-4636190af475',
+    'bisnis' => 'photo-1507003211169-0a1dd7228f2d',
+    'desain' => 'photo-1561070791-2526d30994b5',
+    'engineering' => 'photo-1581091226825-a6a2a5aee158',
+];
+$categoryKey = strtolower((string) ($job['category_name'] ?? ''));
+$bgPhoto = $categoryImages[$categoryKey] ?? 'photo-1521737852567-6949f3f9f2b5';
+$bgUrl = 'https://images.unsplash.com/' . $bgPhoto . '?w=1200&q=80';
+$quota = (int) $job['quota'];
+$filledQuota = max(0, $quota - $remainingQuota);
+$quotaPercent = $quota > 0 ? min(100, (int) round(($filledQuota / $quota) * 100)) : 0;
+$workType = str_contains(strtolower((string) $job['location']), 'remote') || str_contains(strtolower((string) $job['location']), 'wfh') ? 'WFH' : 'WFO';
 
 require_once __DIR__ . '/../../layouts/header.php';
 require_once __DIR__ . '/../../layouts/sidebar_student.php';
@@ -201,95 +226,182 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
 
 <?= display_flash(); ?>
 
-<div class="row g-4">
-    <div class="col-12 col-xl-8">
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-                <div class="d-flex flex-column flex-md-row gap-3 mb-4">
+<style>
+    .job-hero {
+        min-height: 360px;
+        border-radius: 28px;
+        overflow: hidden;
+        position: relative;
+        background-size: cover;
+        background-position: center;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+    }
+
+    .job-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.48));
+    }
+
+    .job-hero-content {
+        position: relative;
+        z-index: 1;
+        color: #fff;
+    }
+
+    .info-chip-row {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 6px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .info-chip {
+        min-width: max-content;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        background: #fff;
+        padding: 10px 14px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .apply-sticky-card {
+        position: sticky;
+        top: 80px;
+    }
+
+    .job-detail-tab .nav-link {
+        color: #475569;
+        font-weight: 700;
+    }
+
+    .job-detail-tab .nav-link.active {
+        color: #6366f1;
+    }
+
+    @media (max-width: 1199.98px) {
+        .apply-sticky-card {
+            position: static;
+        }
+    }
+</style>
+
+<section class="job-hero mb-4" style="background-image: url('<?= sanitize($bgUrl); ?>');">
+    <div class="job-hero-content h-100 p-4 p-lg-5 d-flex flex-column justify-content-end">
+        <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between">
+            <div>
+                <div class="d-flex align-items-center gap-3 mb-4">
                     <img
                         src="<?= sanitize($companyLogoUrl); ?>"
                         alt="Logo <?= sanitize((string) $job['company_name']); ?>"
-                        class="rounded-3 border object-fit-cover"
-                        style="width: 88px; height: 88px;"
+                        class="rounded-4 border border-white border-opacity-25 object-fit-cover bg-white"
+                        style="width: 86px; height: 86px;"
                     >
                     <div>
-                        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
-                            <span class="badge bg-primary-subtle text-primary"><?= sanitize((string) $job['category_name']); ?></span>
-                            <?php if ((int) $job['is_verified'] === 1): ?>
-                                <span class="badge bg-success">Perusahaan Terverifikasi</span>
-                            <?php else: ?>
-                                <span class="badge bg-secondary">Belum Terverifikasi</span>
-                            <?php endif; ?>
-                        </div>
-                        <h2 class="h3 fw-bold mb-2"><?= sanitize((string) $job['title']); ?></h2>
-                        <div class="text-muted">
-                            <i class="bi bi-building me-1"></i>
-                            <?= sanitize((string) $job['company_name']); ?>
-                            <span class="mx-2">•</span>
-                            <i class="bi bi-geo-alt me-1"></i>
-                            <?= sanitize((string) $job['location']); ?>
-                        </div>
+                        <div class="fw-semibold fs-5"><?= sanitize((string) $job['company_name']); ?></div>
+                        <div class="text-white-50"><?= sanitize((string) $job['industry']); ?></div>
                     </div>
                 </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="text-muted small">Periode Magang</div>
-                            <div class="fw-semibold"><?= format_date((string) $job['start_date']); ?> - <?= format_date((string) $job['end_date']); ?></div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="text-muted small">Kuota</div>
-                            <div class="fw-semibold"><?= number_format($remainingQuota); ?> tersisa dari <?= number_format((int) $job['quota']); ?></div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="text-muted small">Deadline</div>
-                            <div class="fw-semibold"><?= format_date((string) $job['deadline']); ?></div>
-                        </div>
-                    </div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <span class="badge bg-primary px-3 py-2"><?= sanitize((string) $job['category_name']); ?></span>
+                    <span class="badge bg-white bg-opacity-10 border border-white border-opacity-25 px-3 py-2">
+                        <i class="bi bi-geo-alt me-1"></i>
+                        <?= sanitize((string) $job['location']); ?>
+                    </span>
+                    <?php if ((int) $job['is_verified'] === 1): ?>
+                        <span class="badge bg-success px-3 py-2">Perusahaan Terverifikasi</span>
+                    <?php endif; ?>
                 </div>
+                <h2 class="display-6 fw-bold mb-0"><?= sanitize((string) $job['title']); ?></h2>
+            </div>
+            <button type="button" class="btn btn-light" id="shareJobButton">
+                <i class="bi bi-share me-1"></i>
+                Bagikan
+            </button>
+        </div>
+    </div>
+</section>
 
-                <div class="mb-4">
-                    <h3 class="h5 fw-bold mb-3">Deskripsi Lowongan</h3>
-                    <div class="text-muted lh-lg"><?= student_apply_render_text((string) $job['description']); ?></div>
-                </div>
+<div class="info-chip-row mb-4">
+    <div class="info-chip">
+        <span class="text-muted small d-block">Kuota</span>
+        <span class="fw-bold"><?= number_format($remainingQuota); ?> tersisa dari <?= number_format($quota); ?></span>
+    </div>
+    <div class="info-chip">
+        <span class="text-muted small d-block">Periode</span>
+        <span class="fw-bold"><?= format_date((string) $job['start_date']); ?> - <?= format_date((string) $job['end_date']); ?></span>
+    </div>
+    <div class="info-chip">
+        <span class="text-muted small d-block">Deadline</span>
+        <span class="fw-bold"><?= format_date((string) $job['deadline']); ?></span>
+    </div>
+    <div class="info-chip">
+        <span class="text-muted small d-block">Tipe</span>
+        <span class="fw-bold"><?= sanitize($workType); ?></span>
+    </div>
+</div>
 
-                <div class="mb-4">
-                    <h3 class="h5 fw-bold mb-3">Persyaratan</h3>
-                    <div class="text-muted lh-lg"><?= student_apply_render_text((string) $job['requirements']); ?></div>
-                </div>
+<div class="row g-4">
+    <div class="col-12 col-xl-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <ul class="nav nav-pills job-detail-tab gap-2 mb-4" id="jobDetailTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="description-tab" data-bs-toggle="pill" data-bs-target="#description-pane" type="button" role="tab">
+                            Deskripsi
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="requirements-tab" data-bs-toggle="pill" data-bs-target="#requirements-pane" type="button" role="tab">
+                            Persyaratan
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="company-tab" data-bs-toggle="pill" data-bs-target="#company-pane" type="button" role="tab">
+                            Tentang Perusahaan
+                        </button>
+                    </li>
+                </ul>
 
-                <div>
-                    <h3 class="h5 fw-bold mb-3">Tentang Perusahaan</h3>
-                    <div class="row g-3">
-                        <div class="col-12 col-md-6">
-                            <div class="text-muted small">Industri</div>
-                            <div class="fw-semibold"><?= sanitize((string) $job['industry']); ?></div>
-                        </div>
-                        <div class="col-12 col-md-6">
-                            <div class="text-muted small">Website</div>
-                            <?php if (!empty($job['website'])): ?>
-                                <a href="<?= sanitize((string) $job['website']); ?>" target="_blank" rel="noopener" class="fw-semibold">
-                                    <?= sanitize((string) $job['website']); ?>
-                                </a>
-                            <?php else: ?>
-                                <div class="fw-semibold">-</div>
-                            <?php endif; ?>
-                        </div>
-                        <div class="col-12">
-                            <div class="text-muted small">Alamat</div>
-                            <div class="fw-semibold"><?= sanitize((string) $job['company_address']); ?></div>
-                        </div>
-                        <?php if (!empty($job['company_description'])): ?>
-                            <div class="col-12">
-                                <div class="text-muted small">Profil Singkat</div>
-                                <div><?= student_apply_render_text((string) $job['company_description']); ?></div>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="description-pane" role="tabpanel" aria-labelledby="description-tab" tabindex="0">
+                        <h3 class="h5 fw-bold mb-3">Deskripsi Lowongan</h3>
+                        <div class="text-muted lh-lg"><?= student_apply_render_text((string) $job['description']); ?></div>
+                    </div>
+                    <div class="tab-pane fade" id="requirements-pane" role="tabpanel" aria-labelledby="requirements-tab" tabindex="0">
+                        <h3 class="h5 fw-bold mb-3">Persyaratan</h3>
+                        <div class="text-muted lh-lg"><?= student_apply_render_text((string) $job['requirements']); ?></div>
+                    </div>
+                    <div class="tab-pane fade" id="company-pane" role="tabpanel" aria-labelledby="company-tab" tabindex="0">
+                        <h3 class="h5 fw-bold mb-3">Tentang Perusahaan</h3>
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <div class="text-muted small">Industri</div>
+                                <div class="fw-semibold"><?= sanitize((string) $job['industry']); ?></div>
                             </div>
-                        <?php endif; ?>
+                            <div class="col-12 col-md-6">
+                                <div class="text-muted small">Website</div>
+                                <?php if (!empty($job['website'])): ?>
+                                    <a href="<?= sanitize((string) $job['website']); ?>" target="_blank" rel="noopener" class="fw-semibold">
+                                        <?= sanitize((string) $job['website']); ?>
+                                    </a>
+                                <?php else: ?>
+                                    <div class="fw-semibold">-</div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="col-12">
+                                <div class="text-muted small">Alamat</div>
+                                <div class="fw-semibold"><?= sanitize((string) $job['company_address']); ?></div>
+                            </div>
+                            <?php if (!empty($job['company_description'])): ?>
+                                <div class="col-12">
+                                    <div class="text-muted small">Profil Singkat</div>
+                                    <div class="text-muted lh-lg"><?= student_apply_render_text((string) $job['company_description']); ?></div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -297,8 +409,8 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
     </div>
 
     <div class="col-12 col-xl-4">
-        <div class="card border-0 shadow-sm sticky-top" style="top: 1rem;">
-            <div class="card-body">
+        <div class="card border-0 shadow-sm apply-sticky-card">
+            <div class="card-body p-4">
                 <h2 class="h5 fw-bold mb-3">Lamar Sekarang</h2>
 
                 <div class="alert <?= $deadlineDays < 3 ? 'alert-danger' : 'alert-info'; ?> mb-3">
@@ -306,8 +418,18 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                         <i class="bi bi-clock me-1"></i>
                         Deadline <?= format_date((string) $job['deadline']); ?>
                     </div>
-                    <div class="<?= $deadlineClass; ?>">
+                    <div class="<?= $deadlineClass; ?>" id="deadlineCountdown" data-deadline-date="<?= sanitize((string) $job['deadline']); ?>">
                         <?= $deadlineDays === 0 ? 'Berakhir hari ini' : 'Sisa ' . number_format(max(0, $deadlineDays)) . ' hari'; ?>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-semibold">Status Kuota</span>
+                        <span class="small text-muted"><?= number_format($filledQuota); ?>/<?= number_format($quota); ?> terisi</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar" role="progressbar" style="width: <?= $quotaPercent; ?>%;" aria-valuenow="<?= $quotaPercent; ?>" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                 </div>
 
@@ -362,13 +484,13 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                     <div class="d-grid gap-2">
                         <button
                             type="button"
-                            class="btn btn-primary"
+                            class="btn btn-primary btn-lg"
                             data-bs-toggle="modal"
                             data-bs-target="#confirmApplyModal"
                             <?= $remainingQuota <= 0 ? 'disabled' : ''; ?>
                         >
                             <i class="bi bi-send me-1"></i>
-                            Kirim Lamaran
+                            Lamar Posisi Ini
                         </button>
                         <?php if ($remainingQuota <= 0): ?>
                             <div class="text-danger small text-center">Kuota lowongan sudah penuh.</div>
@@ -403,27 +525,59 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
     const applicationForm = document.getElementById('applicationForm');
     const coverLetter = document.getElementById('coverLetter');
     const coverLetterCount = document.getElementById('coverLetterCount');
+    const shareJobButton = document.getElementById('shareJobButton');
+    const deadlineCountdown = document.getElementById('deadlineCountdown');
 
     function updateCoverLetterCount() {
         coverLetterCount.textContent = coverLetter.value.trim().length;
     }
 
-    coverLetter.addEventListener('input', () => {
-        updateCoverLetterCount();
-
+    function validateCoverLetter() {
         if (coverLetter.value.trim() !== '' && coverLetter.value.trim().length < 50) {
             coverLetter.setCustomValidity('Cover letter minimal 50 karakter jika diisi.');
         } else {
             coverLetter.setCustomValidity('');
         }
+    }
+
+    function updateDeadlineCountdown() {
+        if (!deadlineCountdown) {
+            return;
+        }
+
+        const deadlineDate = new Date(`${deadlineCountdown.dataset.deadlineDate}T23:59:59`);
+        const now = new Date();
+        const diff = deadlineDate.getTime() - now.getTime();
+
+        if (Number.isNaN(deadlineDate.getTime())) {
+            return;
+        }
+
+        if (diff <= 0) {
+            deadlineCountdown.textContent = 'Deadline telah berakhir';
+            return;
+        }
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const minutes = Math.floor((diff / (1000 * 60)) % 60);
+        const seconds = Math.floor((diff / 1000) % 60);
+
+        if (days > 0) {
+            deadlineCountdown.textContent = `Sisa ${days} hari`;
+            return;
+        }
+
+        deadlineCountdown.textContent = `Berakhir dalam ${hours}j ${minutes}m ${seconds}d`;
+    }
+
+    coverLetter.addEventListener('input', () => {
+        updateCoverLetterCount();
+        validateCoverLetter();
     });
 
     applicationForm.addEventListener('submit', (event) => {
-        if (coverLetter.value.trim() !== '' && coverLetter.value.trim().length < 50) {
-            coverLetter.setCustomValidity('Cover letter minimal 50 karakter jika diisi.');
-        } else {
-            coverLetter.setCustomValidity('');
-        }
+        validateCoverLetter();
 
         if (!applicationForm.checkValidity()) {
             event.preventDefault();
@@ -433,7 +587,32 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
         applicationForm.classList.add('was-validated');
     });
 
+    shareJobButton.addEventListener('click', async () => {
+        const shareData = {
+            title: <?= json_encode((string) $job['title'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>,
+            text: <?= json_encode('Lowongan magang di ' . (string) $job['company_name'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>,
+            url: window.location.href
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+                return;
+            }
+
+            await navigator.clipboard.writeText(window.location.href);
+            shareJobButton.innerHTML = '<i class="bi bi-check2 me-1"></i>Link Disalin';
+            setTimeout(() => {
+                shareJobButton.innerHTML = '<i class="bi bi-share me-1"></i>Bagikan';
+            }, 2200);
+        } catch (error) {
+            console.error('Share failed', error);
+        }
+    });
+
     updateCoverLetterCount();
+    updateDeadlineCountdown();
+    setInterval(updateDeadlineCountdown, 1000);
 </script>
 
 <?php require_once __DIR__ . '/../../layouts/footer.php'; ?>
