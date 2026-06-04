@@ -16,6 +16,7 @@ $studentProfileId = 0;
 $categories = [];
 $locations = [];
 $jobs = [];
+$scraperSources = [];
 $selectedCategoryId = (int) ($_GET['category_id'] ?? 0);
 $search = trim((string) ($_GET['search'] ?? ''));
 $selectedLocation = trim((string) ($_GET['location'] ?? ''));
@@ -87,45 +88,112 @@ try {
     );
     $categories = $categoryStmt->fetchAll();
 
+    $scraperSources = $pdo->query(
+        'SELECT name
+         FROM scraper_sources
+         WHERE is_active = 1
+         ORDER BY name ASC
+         LIMIT 8'
+    )->fetchAll();
+
     $locationStmt = $pdo->query(
-        'SELECT DISTINCT location
-         FROM job_listings
-         WHERE status = \'open\' AND deadline >= CURDATE()
+        'SELECT DISTINCT location FROM (
+            SELECT location
+            FROM job_listings
+            WHERE status = \'open\' AND deadline >= CURDATE()
+            UNION ALL
+            SELECT location
+            FROM scraped_jobs
+            WHERE status = \'approved\' AND (deadline IS NULL OR deadline >= CURDATE())
+         ) location_union
+         WHERE location IS NOT NULL AND location <> \'\'
          ORDER BY location ASC'
     );
     $locations = $locationStmt->fetchAll();
 
-    $conditions = [
-        'job_listings.status = \'open\'',
-        'job_listings.deadline >= CURDATE()',
-        'company_profiles.is_verified = 1',
-    ];
+    $conditions = ['1 = 1'];
     $params = [];
 
     if ($selectedCategoryId > 0) {
-        $conditions[] = 'job_listings.category_id = :category_id';
+        $conditions[] = 'jobs_union.category_id = :category_id';
         $params[':category_id'] = $selectedCategoryId;
     }
 
     if ($search !== '') {
-        $conditions[] = '(job_listings.title LIKE :search OR job_listings.description LIKE :search)';
+        $conditions[] = '(jobs_union.title LIKE :search OR jobs_union.description LIKE :search OR jobs_union.company_name LIKE :search)';
         $params[':search'] = '%' . $search . '%';
     }
 
     if ($selectedLocation !== '') {
-        $conditions[] = 'job_listings.location = :location';
+        $conditions[] = 'jobs_union.location = :location';
         $params[':location'] = $selectedLocation;
     }
 
     $whereSql = ' WHERE ' . implode(' AND ', $conditions);
+    $unionSql = '
+        SELECT
+            \'manual\' AS source_type,
+            job_listings.id,
+            job_listings.title,
+            job_listings.description,
+            job_listings.location,
+            job_listings.deadline,
+            job_listings.quota,
+            job_listings.created_at,
+            company_profiles.company_name,
+            company_profiles.logo,
+            company_profiles.is_verified,
+            internship_categories.name AS category_name,
+            job_listings.category_id,
+            COALESCE(accepted_counts.accepted_count, 0) AS accepted_count,
+            my_applications.status AS application_status,
+            NULL AS source_url,
+            NULL AS source_name
+        FROM job_listings
+        INNER JOIN company_profiles ON company_profiles.id = job_listings.company_id
+        INNER JOIN internship_categories ON internship_categories.id = job_listings.category_id
+        LEFT JOIN (
+            SELECT job_id, COUNT(*) AS accepted_count
+            FROM applications
+            WHERE status = \'accepted\'
+            GROUP BY job_id
+        ) accepted_counts ON accepted_counts.job_id = job_listings.id
+        LEFT JOIN applications my_applications
+            ON my_applications.job_id = job_listings.id
+            AND my_applications.student_id = :student_profile_id
+        WHERE job_listings.status = \'open\'
+          AND job_listings.deadline >= CURDATE()
+          AND company_profiles.is_verified = 1
+        UNION ALL
+        SELECT
+            \'scraped\' AS source_type,
+            scraped_jobs.id,
+            scraped_jobs.title,
+            COALESCE(scraped_jobs.description, \'\') AS description,
+            COALESCE(scraped_jobs.location, \'Online\') AS location,
+            scraped_jobs.deadline,
+            NULL AS quota,
+            scraped_jobs.scraped_at AS created_at,
+            COALESCE(scraped_jobs.company_name, \'Sumber Eksternal\') AS company_name,
+            NULL AS logo,
+            1 AS is_verified,
+            COALESCE(internship_categories.name, \'Eksternal\') AS category_name,
+            scraped_jobs.category_id,
+            0 AS accepted_count,
+            NULL AS application_status,
+            scraped_jobs.source_url,
+            scraper_sources.name AS source_name
+        FROM scraped_jobs
+        INNER JOIN scraper_sources ON scraper_sources.id = scraped_jobs.source_id
+        LEFT JOIN internship_categories ON internship_categories.id = scraped_jobs.category_id
+        WHERE scraped_jobs.status = \'approved\'
+          AND (scraped_jobs.deadline IS NULL OR scraped_jobs.deadline >= CURDATE())
+    ';
 
     $countStmt = $pdo->prepare(
-        'SELECT COUNT(*)
-         FROM job_listings
-         INNER JOIN company_profiles ON company_profiles.id = job_listings.company_id
-         INNER JOIN internship_categories ON internship_categories.id = job_listings.category_id
-         ' . $whereSql
+        'SELECT COUNT(*) FROM (' . $unionSql . ') jobs_union ' . $whereSql
     );
+    $countStmt->bindValue(':student_profile_id', $studentProfileId, PDO::PARAM_INT);
 
     foreach ($params as $key => $value) {
         $countStmt->bindValue($key, $value);
@@ -141,26 +209,9 @@ try {
     }
 
     $stmt = $pdo->prepare(
-        'SELECT job_listings.id, job_listings.title, job_listings.description, job_listings.location,
-                job_listings.quota, job_listings.deadline, job_listings.created_at,
-                company_profiles.company_name, company_profiles.logo, company_profiles.is_verified,
-                internship_categories.name AS category_name,
-                COALESCE(accepted_counts.accepted_count, 0) AS accepted_count,
-                my_applications.status AS application_status
-         FROM job_listings
-         INNER JOIN company_profiles ON company_profiles.id = job_listings.company_id
-         INNER JOIN internship_categories ON internship_categories.id = job_listings.category_id
-         LEFT JOIN (
-             SELECT job_id, COUNT(*) AS accepted_count
-             FROM applications
-             WHERE status = \'accepted\'
-             GROUP BY job_id
-         ) accepted_counts ON accepted_counts.job_id = job_listings.id
-         LEFT JOIN applications my_applications
-             ON my_applications.job_id = job_listings.id
-             AND my_applications.student_id = :student_profile_id
+        'SELECT * FROM (' . $unionSql . ') jobs_union
          ' . $whereSql . '
-         ORDER BY job_listings.created_at DESC, job_listings.id DESC
+         ORDER BY jobs_union.created_at DESC, jobs_union.id DESC
          LIMIT :limit OFFSET :offset'
     );
 
@@ -245,8 +296,30 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                 <a href="<?= rtrim(BASE_URL, '/'); ?>/student/jobs/index.php" class="btn btn-outline-secondary">Reset</a>
             </div>
         </form>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="showExternalJobs" checked>
+            <label class="form-check-label" for="showExternalJobs">Tampilkan lowongan eksternal</label>
+        </div>
     </div>
 </div>
+
+<?php if ($scraperSources !== []): ?>
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3">
+            <div>
+                <h2 class="h6 fw-bold mb-1">
+                    <i class="bi bi-robot me-1 text-primary"></i>
+                    Sumber Info Magang
+                </h2>
+                <p class="text-muted mb-0">
+                    Kami mengumpulkan info magang dari
+                    <?= sanitize(implode(', ', array_map(static fn ($source) => (string) $source['name'], $scraperSources))); ?>.
+                </p>
+            </div>
+            <span class="badge text-bg-light align-self-start">Auto Scraper Aktif</span>
+        </div>
+    </div>
+<?php endif; ?>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-3">
     <div>
@@ -269,14 +342,15 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
 <div class="row g-4">
     <?php foreach ($jobs as $job): ?>
         <?php
+        $isExternal = (string) ($job['source_type'] ?? 'manual') === 'scraped';
         $jobId = (int) $job['id'];
-        $quota = (int) $job['quota'];
+        $quota = $job['quota'] !== null ? (int) $job['quota'] : null;
         $acceptedCount = (int) $job['accepted_count'];
-        $remainingQuota = max(0, $quota - $acceptedCount);
+        $remainingQuota = $quota !== null ? max(0, $quota - $acceptedCount) : null;
         $hasApplied = !empty($job['application_status']);
         $logoUrl = !empty($job['logo']) ? get_file_url((string) $job['logo'], 'company_logos') : 'https://placehold.co/96x96?text=Logo';
         ?>
-        <div class="col-12 col-md-6 col-xl-4">
+        <div class="col-12 col-md-6 col-xl-4 job-card-wrapper" data-source-type="<?= $isExternal ? 'scraped' : 'manual'; ?>">
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-body d-flex flex-column">
                     <div class="d-flex align-items-start gap-3 mb-3">
@@ -292,6 +366,15 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                                 <span class="badge bg-success">Terverifikasi</span>
                             <?php else: ?>
                                 <span class="badge bg-secondary">Belum Verifikasi</span>
+                            <?php endif; ?>
+                            <?php if ($isExternal): ?>
+                                <span
+                                    class="badge bg-secondary"
+                                    data-bs-toggle="tooltip"
+                                    title="Lowongan ini dikumpulkan otomatis dari <?= sanitize((string) ($job['source_name'] ?? 'sumber eksternal')); ?>"
+                                >
+                                    Eksternal
+                                </span>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -310,13 +393,19 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                     <div class="row g-2 small mb-3">
                         <div class="col-6">
                             <div class="text-muted">Kuota Tersisa</div>
-                            <div class="fw-semibold <?= $remainingQuota <= 0 ? 'text-danger' : 'text-success'; ?>">
-                                <?= number_format($remainingQuota); ?>/<?= number_format($quota); ?>
-                            </div>
+                            <?php if ($quota === null): ?>
+                                <div class="fw-semibold text-muted">Cek sumber</div>
+                            <?php else: ?>
+                                <div class="fw-semibold <?= $remainingQuota <= 0 ? 'text-danger' : 'text-success'; ?>">
+                                    <?= number_format((int) $remainingQuota); ?>/<?= number_format($quota); ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
                         <div class="col-6 text-end">
                             <div class="text-muted">Deadline</div>
-                            <div class="fw-semibold"><?= format_date((string) $job['deadline']); ?></div>
+                            <div class="fw-semibold">
+                                <?= !empty($job['deadline']) ? sanitize(format_date((string) $job['deadline'])) : 'Cek sumber'; ?>
+                            </div>
                         </div>
                     </div>
 
@@ -324,7 +413,12 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
                         <?php if ($hasApplied): ?>
                             <div><?= student_jobs_status_badge((string) $job['application_status']); ?></div>
                             <button type="button" class="btn btn-sm btn-secondary" disabled>Sudah Dilamar</button>
-                        <?php elseif ($remainingQuota <= 0): ?>
+                        <?php elseif ($isExternal): ?>
+                            <span class="badge bg-secondary">Eksternal</span>
+                            <a href="<?= sanitize((string) $job['source_url']); ?>" target="_blank" rel="noopener" class="btn btn-sm btn-primary">
+                                Buka Sumber
+                            </a>
+                        <?php elseif ($remainingQuota !== null && $remainingQuota <= 0): ?>
                             <span class="badge bg-danger">Kuota Penuh</span>
                             <button type="button" class="btn btn-sm btn-secondary" disabled>Kuota Penuh</button>
                         <?php else: ?>
@@ -357,5 +451,24 @@ require_once __DIR__ . '/../../layouts/sidebar_student.php';
         </ul>
     </nav>
 <?php endif; ?>
+
+<script>
+    const showExternalJobs = document.getElementById('showExternalJobs');
+    const externalPreference = localStorage.getItem('cariintern-show-external-jobs');
+
+    if (externalPreference !== null) {
+        showExternalJobs.checked = externalPreference === 'true';
+    }
+
+    function applyExternalJobsVisibility() {
+        document.querySelectorAll('[data-source-type="scraped"]').forEach((card) => {
+            card.classList.toggle('d-none', !showExternalJobs.checked);
+        });
+        localStorage.setItem('cariintern-show-external-jobs', String(showExternalJobs.checked));
+    }
+
+    showExternalJobs.addEventListener('change', applyExternalJobsVisibility);
+    applyExternalJobsVisibility();
+</script>
 
 <?php require_once __DIR__ . '/../../layouts/footer.php'; ?>
