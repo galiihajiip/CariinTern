@@ -79,6 +79,9 @@ function landing_company_initials(string $companyName): string
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= sanitize(APP_NAME); ?></title>
     <link rel="manifest" href="<?= rtrim(BASE_URL, '/'); ?>/manifest.json">
+    <link rel="icon" href="<?= rtrim(BASE_URL, '/'); ?>/favicon.ico" sizes="any">
+    <link rel="icon" href="<?= rtrim(BASE_URL, '/'); ?>/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="<?= rtrim(BASE_URL, '/'); ?>/assets/icons/icon-152x152.png">
     <meta name="theme-color" content="#6366f1">
     <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
     <link href="<?= rtrim(BASE_URL, '/'); ?>/assets/vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
@@ -113,6 +116,7 @@ function landing_company_initials(string $companyName): string
             position: relative;
             display: flex;
             align-items: center;
+            padding: 7.5rem 0 5rem;
             overflow: hidden;
             color: #fff;
             background-image:
@@ -137,6 +141,7 @@ function landing_company_initials(string $companyName): string
             position: relative;
             z-index: 1;
             max-width: 860px;
+            margin-top: 1.75rem;
         }
 
         .hero-eyebrow {
@@ -144,12 +149,16 @@ function landing_company_initials(string $companyName): string
             width: auto;
             max-width: min(100%, 760px);
             white-space: normal !important;
-            line-height: 1.45 !important;
+            line-height: 1.55 !important;
             text-align: left;
             overflow-wrap: normal;
             word-break: normal;
             overflow: visible !important;
             vertical-align: top;
+            padding-top: 0.7rem !important;
+            padding-bottom: 0.7rem !important;
+            margin-top: 1.25rem;
+            transform: translateY(0.75rem);
         }
 
         .hero-section .display-3 {
@@ -286,11 +295,18 @@ function landing_company_initials(string $companyName): string
                 align-items: flex-start;
             }
 
+            .hero-content {
+                margin-top: 1rem;
+            }
+
             .hero-eyebrow {
                 border-radius: 14px !important;
                 font-size: 0.82rem;
-                padding: 0.55rem 0.75rem !important;
+                line-height: 1.55 !important;
+                padding: 0.7rem 0.75rem !important;
+                margin-top: 0.5rem;
                 max-width: calc(100vw - 2rem);
+                transform: translateY(0.5rem);
             }
 
             .section-padding {

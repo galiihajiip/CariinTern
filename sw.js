@@ -1,6 +1,6 @@
-const CACHE_VERSION = 'cariintern-v1.0.1';
-const STATIC_CACHE = 'cariintern-static-v2';
-const DYNAMIC_CACHE = 'cariintern-dynamic-v2';
+const CACHE_VERSION = 'cariintern-v1.0.2';
+const STATIC_CACHE = 'cariintern-static-v3';
+const DYNAMIC_CACHE = 'cariintern-dynamic-v3';
 const BASE_PATH = '/internship-system';
 const OFFLINE_PAGE = `${BASE_PATH}/offline.php`;
 const MAX_DYNAMIC_ITEMS = 50;
@@ -11,6 +11,8 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/login.php`,
   `${BASE_PATH}/offline.php`,
   `${BASE_PATH}/manifest.json`,
+  `${BASE_PATH}/favicon.ico`,
+  `${BASE_PATH}/favicon.svg`,
   `${BASE_PATH}/assets/vendor/bootstrap/bootstrap.min.css`,
   `${BASE_PATH}/assets/vendor/bootstrap/bootstrap.bundle.min.js`,
   `${BASE_PATH}/assets/vendor/bootstrap-icons/bootstrap-icons.min.css`,
@@ -19,6 +21,8 @@ const STATIC_ASSETS = [
   `${BASE_PATH}/assets/css/theme.css`,
   `${BASE_PATH}/assets/js/custom.js`,
   `${BASE_PATH}/assets/js/pwa.js`,
+  `${BASE_PATH}/assets/icons/favicon.ico`,
+  `${BASE_PATH}/assets/icons/app-icon.svg`,
   `${BASE_PATH}/assets/icons/icon-192x192.png`,
   `${BASE_PATH}/assets/icons/icon-512x512.png`
 ];
@@ -131,6 +135,7 @@ function isStaticAsset(url) {
     '.jpeg',
     '.webp',
     '.svg',
+    '.ico',
     '.woff',
     '.woff2',
     '.json'

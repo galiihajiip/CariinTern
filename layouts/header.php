@@ -30,6 +30,8 @@ $vapidPublicKey = defined('VAPID_PUBLIC_KEY') ? VAPID_PUBLIC_KEY : '';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $full_title; ?></title>
     <link rel="manifest" href="<?= rtrim(BASE_URL, '/'); ?>/manifest.json">
+    <link rel="icon" href="<?= rtrim(BASE_URL, '/'); ?>/favicon.ico" sizes="any">
+    <link rel="icon" href="<?= rtrim(BASE_URL, '/'); ?>/favicon.svg" type="image/svg+xml">
     <meta name="theme-color" content="#6366f1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
