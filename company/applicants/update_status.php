@@ -5,6 +5,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/push_notification.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -108,7 +109,7 @@ try {
 
     $applicationStmt = $pdo->prepare(
         'SELECT applications.id, applications.status, applications.job_id,
-                student_profiles.full_name,
+                student_profiles.full_name, student_profiles.user_id AS student_user_id,
                 job_listings.title AS job_title, job_listings.quota,
                 job_listings.company_id
          FROM applications
@@ -167,6 +168,23 @@ try {
         'update_application_status',
         'Perusahaan mengubah status lamaran ' . (string) $application['full_name'] . ' untuk lowongan ' . (string) $application['job_title'] . ' menjadi ' . $newStatus
     );
+
+    try {
+        $message = match ($newStatus) {
+            'review' => ['Lamaran Sedang Direview', 'Perusahaan sedang memproses lamaranmu untuk ' . (string) $application['job_title']],
+            'accepted' => ['Selamat! Kamu Diterima', 'Lamaranmu untuk ' . (string) $application['job_title'] . ' diterima!'],
+            'rejected' => ['Update Status Lamaran', 'Perusahaan telah memperbarui status lamaranmu untuk ' . (string) $application['job_title']],
+        };
+
+        notify_user(
+            (int) $application['student_user_id'],
+            $message[0],
+            $message[1],
+            BASE_URL . '/student/applications/index.php'
+        );
+    } catch (Throwable $exception) {
+        error_log('Push notification for application status failed: ' . $exception->getMessage());
+    }
 
     applicant_status_json([
         'success' => true,

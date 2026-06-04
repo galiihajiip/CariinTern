@@ -5,6 +5,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/push_notification.php';
 
 require_role('admin');
 
@@ -42,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             $pdo = Database::getInstance()->getConnection();
-            $companyStmt = $pdo->prepare('SELECT company_name FROM company_profiles WHERE id = :id LIMIT 1');
+            $companyStmt = $pdo->prepare('SELECT company_name, user_id FROM company_profiles WHERE id = :id LIMIT 1');
             $companyStmt->execute([':id' => $companyId]);
             $company = $companyStmt->fetch();
 
@@ -60,6 +61,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
 
                 log_activity($adminId, 'verify_company', 'Admin memverifikasi perusahaan: ' . $company['company_name']);
+
+                try {
+                    notify_user(
+                        (int) $company['user_id'],
+                        'Akun Terverifikasi!',
+                        'Akun perusahaanmu telah diverifikasi. Mulai buat lowongan sekarang!',
+                        BASE_URL . '/company/dashboard.php'
+                    );
+                } catch (Throwable $exception) {
+                    error_log('Push notification for company verification failed: ' . $exception->getMessage());
+                }
+
                 set_flash('success', 'Perusahaan berhasil diverifikasi');
             } else {
                 $reason = trim((string) ($_POST['reason'] ?? ''));
