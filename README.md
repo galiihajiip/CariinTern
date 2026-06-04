@@ -1,5 +1,21 @@
 # CariinTern
 
+## Identitas Proyek
+
+**Judul Topik Karya:** CariinTern: Platform Web Pencarian dan Pendaftaran Magang Terintegrasi untuk Mahasiswa dan Perusahaan
+
+Project ini dibuat untuk memenuhi tugas **EAS Pemrograman Web Kelas F081**.
+
+**Dosen Pengampu:** M. Muharrom Al Haromainy, S.Kom., M.Kom.
+
+**Kelompok:** 4
+
+**Anggota Kelompok:**
+
+- Galih Aji Pangestu
+- Fidelia Hahas Asabela
+- Mohammad Satria Putra Wicaksono
+
 CariinTern adalah aplikasi web pendaftaran magang berbasis PHP Native untuk menghubungkan mahasiswa, perusahaan, dan admin kampus dalam satu sistem terpusat. Aplikasi ini mendukung pencarian lowongan, pengiriman lamaran, verifikasi perusahaan, manajemen data master, laporan, dan dashboard analitik.
 
 ## Fitur Utama
@@ -10,9 +26,14 @@ CariinTern adalah aplikasi web pendaftaran magang berbasis PHP Native untuk meng
 - Company module untuk profil perusahaan, CRUD lowongan, dan review pelamar.
 - Student module untuk profil mahasiswa, upload CV/transkrip, pencarian lowongan, submit lamaran, dan tracking status.
 - Public landing page dengan statistik, kategori, dan lowongan terbaru.
-- Upload dokumen dan logo dengan validasi tipe file dan ukuran.
+- Upload dokumen, logo perusahaan, dan foto profil dengan validasi tipe file dan ukuran.
 - CSRF protection, reusable Validator class, dan helper sanitasi output.
 - Notification bell berbasis activity log.
+- Push notification berbasis Web Push API dan VAPID.
+- Progressive Web App (PWA) dengan manifest, service worker, cache strategy, install prompt, dan halaman offline.
+- Auto-scraper lowongan eksternal dari website, RSS, Telegram, dan Google Custom Search.
+- Admin panel untuk mengelola sumber scraper, review hasil scraping, import lowongan, dan monitoring log.
+- Integrasi lowongan eksternal yang sudah disetujui ke halaman lowongan mahasiswa.
 - Admin reports dengan export CSV.
 - Custom error pages untuk 404, 403, dan 500.
 - Hardening upload directory dan login rate limiting sederhana.
@@ -26,6 +47,9 @@ CariinTern adalah aplikasi web pendaftaran magang berbasis PHP Native untuk meng
 - Bootstrap Icons
 - Chart.js
 - Vanilla JavaScript
+- Service Worker dan Web App Manifest
+- Composer
+- Web Push library
 - Apache dengan `.htaccess` dan `mod_rewrite`
 
 ## Persyaratan Sistem
